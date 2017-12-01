@@ -10,3 +10,4 @@
 - none/null checks at beginning
 - limit functions to < 25 lines
 - descriptive comments!!!
+- look at pseudo-code.py (edit freely!)
