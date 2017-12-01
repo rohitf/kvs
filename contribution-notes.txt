@@ -1,0 +1,4 @@
+krollert get and put methods, updated kv store, general debugging, along with other methods
+anlin update node/add remove node functions, debugged
+rfalor heartbeat function (ping) and background tasks, general debugging, select code optimization
+hnguye43 general debugging
