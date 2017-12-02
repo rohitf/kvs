@@ -146,6 +146,18 @@ new APIs
 
 '''
 BG functions:
-gossip
-ping
 '''
+def gossip():
+	broadcast to all alive replicas
+
+def ping():
+	ping all replicas
+	if replica does not respond:
+		if replica was only one in partition:
+			if proxies:
+				update_view(proxy) # promote proxy
+			else:
+				rebalance key store across remaining partitions
+				partition - 1
+		remove replica from REPLICAS
+		
