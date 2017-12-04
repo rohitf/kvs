@@ -1,8 +1,6 @@
 # ASGN 4
 ## TODO
-
 ### Initial Setup Stuff
-- use .gitignore
 - standardize code with helper functions
 - try catch everywhere
 - default parameters (if none, then init in param)
