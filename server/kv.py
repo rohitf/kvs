@@ -2,18 +2,15 @@
 #     Team Valetta          #
 #     November 21st 2017    #
 
-# this is for checking if key has only letters, numbers, and underscores.
 import re
 # this is used for seeing the size of a value in put.
 import sys
 import time
 import functions as app_funct
 
-# KSV Nested Dictionary
 d = {}
 vc = {}
 timestamp = {}
-
 
 def get(key):
     try:
@@ -22,8 +19,6 @@ def get(key):
         return None, [0], None
 
 # This function assumes that the causal payload is already the most recent
-
-
 def put(key, value, causal_payload, ts):
     global d
     global vc
@@ -43,13 +38,11 @@ def put(key, value, causal_payload, ts):
     status_code = 201 if rep else 200
     return True, status_code
 
-
 def getDictionaries():
     global d
     global vs
     global timestamp
     return d, vc, timestamp
-
 
 def setDictionaries(di, vec, ts):
     global d

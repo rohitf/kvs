@@ -118,10 +118,7 @@ def put(key):
             my_val, my_vc, my_ts = kv.get(key)
 
             # commented this out because equalityVC is called in compareVC
-            # if not app_funct.equalityVC(client_CP, my_val) and
-
             if not app_funct.compareVC(client_CP, my_vc):
-                # TODO look into updating status code
                 return (json.dumps({"result": "error", "causal_payload": app_funct.deparseVC(client_CP), "msg": "Client payload not most recent, get again before trying again"}), 404, {'Content-Type': 'application/json'})
             else:
                 current_max_value, current_max_VC, current_max_timestamp = findNewest(
@@ -133,13 +130,9 @@ def put(key):
                 if len(current_max_VC) < len(REPLICAS):
                     diff = len(REPLICAS) - len(current_max_VC)
                     current_max_VC = [0] * diff
-                # print("MEOW2: current_max_VC ", current_max_VC, file=sys.stderr)
 
                 compare_VC_results = app_funct.compareVC(
                     client_CP, current_max_VC)
-
-                # if current_max_VC is None:
-                #     current_max_VC = [0] * len(VIEWS)
 
                 if app_funct.equalityVC(client_CP, current_max_VC):
                     # update value + increment
@@ -188,7 +181,6 @@ def put(key):
 
 @app.route('/kv-store/get_node_details')
 def get_node():
-    # when would this ever be a failure?
     r = "success"
     m = "Yes" if IS_REPLICA else "No"
     return (jsonify({"result": r, "replica": m}))
@@ -212,10 +204,6 @@ def update():
         print(update_ip)
         if update_ip not in VIEWS:
             VIEWS.append(update_ip)
-        print("************************")
-        print("http://" + update_ip + "/kv-store/duplicateview/")
-        print(REPLICAS)
-        print(VIEWS)
         try:
             m = requests.put("http://" + update_ip + "/kv-store/duplicateview", data={
                              'REPLICAS': listToString(REPLICAS), 'VIEWS': listToString(VIEWS)})
@@ -386,7 +374,6 @@ def gossip(gossip_ipp):
         return "SUCCESS"
     except:
         return "FAILED"
-    # TODO: add something for this to return
 
 
 def findNewest(key):
@@ -401,14 +388,12 @@ def findNewest(key):
                              "/kv-store/verify/" + key, timeout=.5)
             res = A.json()
             replica_req.append(res)
-
         except requests.exceptions.Timeout:
             continue
 
         temp_value = replica_req[-1]['value']
         temp_VC = replica_req[-1]['causal_payload']
         temp_timestamp = replica_req[-1]['timestamp']
-        # print("MEOW: temp_VC", temp_VC, " current_max_VC ", current_max_VC, file=sys.stderr)
         compare_VC_results = app_funct.compareVC(temp_VC, current_max_VC)
 
         # check if given value, if no value
@@ -421,11 +406,8 @@ def findNewest(key):
         if app_funct.equalityVC(current_max_VC, temp_VC):
             continue
         if (compare_VC_results is None and current_timestamp > current_max_timestamp) or compare_VC_results:
-            (current_max_value, current_max_VC, current_max_timestamp) = (
-                temp_value, temp_VC, temp_timestamp)
+           (current_max_value, current_max_VC , current_max_timestamp) = (temp_value, temp_VC, temp_timestamp)
 
-    # return {"value" : current_max_value, "causal_payload" : current_max_VC, "timestamp" : current_max_timestamp}
-    # return IP_PORT
     return current_max_value, current_max_VC, current_max_timestamp
 
 
@@ -480,7 +462,6 @@ background_thread.start()
 def duplicateView():
     global REPLICAS
     global VIEWS
-    print("_________________DUPLICATED______________________")
     REPLICAS = stringToList(request.form.get('REPLICAS'))
     VIEWS = stringToList(request.form.get('VIEWS'))
     return (json.dumps({"result": "success"}), 200, {'Content-Type': 'application/json'})
@@ -489,10 +470,3 @@ def duplicateView():
 if __name__ == '__main__':
     # Run Command
     app.run(host=EXTERNAL_IP, port=int(PORT), debug=True)
-
-# print(REPLICAS_WANTED, file=sys.stderr)
-# print(REPLICAS, file=sys.stderr)
-# print(IS_REPLICA, file=sys.stderr)
-# print(MY_ID, file=sys.stderr)
-# print(VIEWS, file=sys.stderr)
-# print(PROXIES, file=sys.stderr)
