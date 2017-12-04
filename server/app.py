@@ -1,6 +1,6 @@
 #!/usr/bin/python
 import kv as kv
-import functions as app_funct
+import functions as fn
 from globals import *
 
 # Replica Specific Information
@@ -27,13 +27,13 @@ app = Flask(__name__)
 
 @app.route('/kv-store/<key>')
 def get(key):
-    isKeyValid = app_funct.onlyKeyCheck(key)
+    isKeyValid = fn.onlyKeyCheck(key)
     client_CP = request.form.get('causal_payload')
     if not client_CP or client_CP == "''":
         client_CP = [0] * (MY_ID + 1)
 
     else:
-        client_CP = app_funct.parseVC(client_CP)
+        client_CP = fn.parseVC(client_CP)
     if not isKeyValid[0]:
         return (json.dumps(isKeyValid[1]), isKeyValid[2], {'Content-Type': 'application/json'})
 
@@ -43,7 +43,7 @@ def get(key):
         my_value, my_VC, my_timestamp = kv.get(key)
 
         no_result = current_max_value is None
-        need_update = not app_funct.equalityVC(current_max_VC, my_VC)
+        need_update = not fn.equalityVC(current_max_VC, my_VC)
         status_code = 200
 
         if need_update:
@@ -54,7 +54,7 @@ def get(key):
                            "causal_payload": current_max_VC, "timestamp": current_max_timestamp}
                 return (json.dumps(message), status_code, {'Content-Type': 'application/json'})
             # The put fails then:
-            a, message, status_code = app_funct.keyCheck(key, value)[1]
+            a, message, status_code = fn.keyCheck(key, value)[1]
             return (json.dumps(message), status_code, {'Content-Type': 'application/json'})
         elif no_result:
             return (json.dumps({"result": "error", "msg": "Key does not exist"}), 404, {'Content-Type': 'application/json'})
@@ -105,10 +105,10 @@ def put(key):
             client_CP = [0] * (MY_ID + 1)
 
         else:
-            client_CP = app_funct.parseVC(client_CP)
+            client_CP = fn.parseVC(client_CP)
 
         # Check if key uses valid characters, value is small enough, etc.
-        isKeyValid = app_funct.keyCheck(key, val)
+        isKeyValid = fn.keyCheck(key, val)
         if not isKeyValid[0]:
             return (json.dumps(isKeyValid[1]), isKeyValid[2], {'Content-Type': 'application/json'})
 
@@ -118,8 +118,8 @@ def put(key):
             my_val, my_vc, my_ts = kv.get(key)
 
             # commented this out because equalityVC is called in compareVC
-            if not app_funct.compareVC(client_CP, my_vc):
-                return (json.dumps({"result": "error", "causal_payload": app_funct.deparseVC(client_CP), "msg": "Client payload not most recent, get again before trying again"}), 404, {'Content-Type': 'application/json'})
+            if not fn.compareVC(client_CP, my_vc):
+                return (json.dumps({"result": "error", "causal_payload": fn.deparseVC(client_CP), "msg": "Client payload not most recent, get again before trying again"}), 404, {'Content-Type': 'application/json'})
             else:
                 current_max_value, current_max_VC, current_max_timestamp = findNewest(
                     key)
@@ -131,15 +131,15 @@ def put(key):
                     diff = len(REPLICAS) - len(current_max_VC)
                     current_max_VC = [0] * diff
 
-                compare_VC_results = app_funct.compareVC(
+                compare_VC_results = fn.compareVC(
                     client_CP, current_max_VC)
 
-                if app_funct.equalityVC(client_CP, current_max_VC):
+                if fn.equalityVC(client_CP, current_max_VC):
                     # update value + increment
                     client_CP[MY_ID] += 1
                     result, status_code = kv.put(
                         key, val, client_CP, client_timestamp)
-                    message = {"result": "success", "value": val, "node_id": MY_ID, "causal_payload": app_funct.deparseVC(
+                    message = {"result": "success", "value": val, "node_id": MY_ID, "causal_payload": fn.deparseVC(
                         client_CP), "timestamp": str(client_timestamp)}
                     return (json.dumps(message), status_code, {'ContentType': 'application/json'})
 
@@ -149,7 +149,7 @@ def put(key):
                     client_CP[MY_ID] += 1
                     result, status_code = kv.put(
                         key, val, client_CP, client_timestamp)
-                    message = {"result": "success", "value": val, "node_id": MY_ID, "causal_payload": app_funct.deparseVC(
+                    message = {"result": "success", "value": val, "node_id": MY_ID, "causal_payload": fn.deparseVC(
                         client_CP), "timestamp": str(client_timestamp)}
                     return (json.dumps(message), status_code, {'ContentType': 'application/json'})
 
@@ -159,7 +159,7 @@ def put(key):
                     result, status_code = kv.put(
                         key, current_max_value, current_max_VC, current_max_timestamp)
                     message = {"result": "failure", "value": current_max_value, "node_id": MY_ID,
-                               "causal_payload": app_funct.deparseVC(client_CP), "timestamp": str(current_timestamp)}
+                               "causal_payload": fn.deparseVC(client_CP), "timestamp": str(current_timestamp)}
                     return (json.dumps(message), status_code, {'ContentType': 'application/json'})
         else:
             send_data = {'causal_payload': client_CP, 'val': val}
@@ -324,10 +324,10 @@ def getGossip():
             continue
 
         # if equal, do nothing
-        if app_funct.equalityVC(my_vc_val, sent_vc_val):
+        if fn.equalityVC(my_vc_val, sent_vc_val):
             continue
 
-        compare_VC_results = app_funct.compareVC(my_vc_val, sent_vc_val)
+        compare_VC_results = fn.compareVC(my_vc_val, sent_vc_val)
         if (compare_VC_results is None and my_ts_val > sent_ts_val) or compare_VC_results:
             # mine is bigger, save it
             to_update[key] = {"value": my_d_val,
@@ -394,7 +394,7 @@ def findNewest(key):
         temp_value = replica_req[-1]['value']
         temp_VC = replica_req[-1]['causal_payload']
         temp_timestamp = replica_req[-1]['timestamp']
-        compare_VC_results = app_funct.compareVC(temp_VC, current_max_VC)
+        compare_VC_results = fn.compareVC(temp_VC, current_max_VC)
 
         # check if given value, if no value
         if(temp_value is None):
@@ -403,7 +403,7 @@ def findNewest(key):
             no_result = False
 
         # two VC's are the same, then do nothing
-        if app_funct.equalityVC(current_max_VC, temp_VC):
+        if fn.equalityVC(current_max_VC, temp_VC):
             continue
         if (compare_VC_results is None and current_timestamp > current_max_timestamp) or compare_VC_results:
            (current_max_value, current_max_VC , current_max_timestamp) = (temp_value, temp_VC, temp_timestamp)

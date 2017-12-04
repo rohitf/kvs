@@ -1,4 +1,5 @@
 import functions as fn
+import rohit_kv as kv
 from globals import *
 
 app = Flask(__name__)
@@ -55,7 +56,7 @@ if __name__ == '__main__':
         node_type = REPLICA if r > 0 else PROXY
         node_id = fn.get_id(view)
         fn.add_node(node_id, node_type, view)
-        r -= r - 1
+        r -= 1
     
     # Update METADATA
     METADATA.REPLICAS_WANTED = int(os.getenv('K'))

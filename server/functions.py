@@ -41,14 +41,14 @@ def is_replica(node_id):
 
 
 def add_node(node_id, node_type, node_ip_port):
-    VIEW[node_id] = {
+    METADATA.VIEW[node_id] = {
         "ip_port": node_ip_port,
         "type": node_type
     }
 
 
 def generate_response(payload, status_code):
-    resp = ({jsonify(payload), status_code, {
+    resp = ({json.dumps(payload), status_code, {
             'Content-Type': 'application/json'}})
     return resp
 
@@ -76,7 +76,7 @@ def http_error(message, status_code):
         "result": "error",
         "msg": message
     }
-    resp = ({jsonify(payload), status_code, {
+    resp = ({json.dumps(payload), status_code, {
             'Content-Type': 'application/json'}})
     return resp
 
