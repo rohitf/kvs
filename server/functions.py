@@ -27,7 +27,7 @@ def get_all_replicas():
     all_replicas = []
     for partition in META.GLOBAL_VIEW:
         all_replicas.extend(partition)
-    
+
     return all_replicas
 
 def get_replicas(partition_id):
@@ -217,7 +217,7 @@ def generateGlobalView(all_views):
 
     for i in range(len(all_views)):
         if i % split == 0:  # partition is full, so create new one
-            add_partition() 
+            add_partition()
         GV[len(GV)].append(all_views[i])
 
     # check if last partition needs to become proxies
@@ -226,7 +226,7 @@ def generateGlobalView(all_views):
         temp = GV[last_partition_index]
         del GV[last_partition_index]
         GV[0] = temp
-        
+
 def add_partition(nodes=[]):
     new_partition_index = len(META.GLOBAL_VIEW) + 1
     META.GLOBAL_VIEW[new_partition_index] = nodes[:] # pass a shallow copy of the nodes to avoid unwanted references
@@ -242,3 +242,9 @@ def getLocalView():
 
 def getNodeID(IP_PORT):
     return META.GLOBAL_VIEW[META.THIS_PARTITION].find(IP_PORT)
+
+def dictionaryToString(dictionary):
+    return json.dumps(dictionary)
+
+def stringToDictionary(strng):
+    return json.loads(strng)

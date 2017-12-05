@@ -38,6 +38,17 @@ def put(key, value, causal_payload, ts):
     status_code = 201 if rep else 200
     return True, status_code
 
+def delete(key):
+    global d
+    global vc
+    global timestamp
+
+    a, b, c = get(key)
+    if a is not None:
+        del d[key]
+        del vc[key]
+        del timestamp[key]
+
 def getDictionaries():
     global d
     global vs

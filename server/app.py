@@ -4,8 +4,6 @@ import functions as fn
 import math
 from globals import *
 
-
-# Replica Specific Information
 VIEWS_os_env = os.getenv('VIEW')  # Stores all views that this Node knows of
 META.IP_PORT = os.getenv('IPPORT')  # Own ip port
 
@@ -92,16 +90,12 @@ def get(key):
                 continue
         return fn.http_error({"result": "Error", "msg": "Server unavailable"}, 500)
 
-# Just return val, no checking with other nodes
-
-
 @app.route('/kv-store/verify/<key>')
 def stupidGet(key):
     value, causal_payload, timestamp = kv.get(key)
     message = {"value": value, "causal_payload": causal_payload,
                "timestamp": timestamp}
     return fn.http_success(message, 200)
-
 
 @app.route('/kv-store/<key>', methods=['PUT'])
 def put(key):
@@ -182,7 +176,6 @@ def put(key):
     else:
         return fn.http_error({"result": "Error", "msg": "No VALUE provided"}, 403)
 
-
 @app.route('/kv-store/stupid_update', methods=['PUT'])
 def updateGlobals():
     META.GLOBAL_VIEW = request.form.get('global_view')
@@ -203,7 +196,7 @@ def update():
             "partition_id": #...,
             "number_of_partitions":  #...
         }
-        
+
         try:
             data={'global_view': META.GLOBAL_VIEW, 'directory': META.DIRECTORY}
             urls = ["http://" + node_ip + "/kv-store/stupid_update" for node_ip in fn.get_all_nodes()]
@@ -213,78 +206,126 @@ def update():
         except:
             print("FAILED STUPID UPDATE")
 
+@app.route('/rebalance')
+def rebalance():
+    for node_ipp in fn.getLocalView():
+        if node_ipp == META.IP_PORT:
+            continue
+        resp = gossip(node_ipp)
+        if resp == ERROR:
+            print("ERROR IN REBALANCE")
+
+    toSend = {}
+    d, vs, ts = kv.getDictionaries()
+    for key in d:
+        correct_part = fn.getPartitionId(fn.count_partitions())
+        if correct_part == META.THIS_PARTITION:
+            continue
+        val, vc, ts = kv.get(key)
+        try:
+            toSend[correct_part].append({'key' : key, 'value' : val, 'casual_payload': fn.listToString(vc), 'timestamp' : ts})
+        except KeyError:
+            toSend[correct_part] = [{'key' : key, 'value' : val, 'casual_payload': fn.listToString(vc), 'timestamp' : ts}]
+        kv.delete(key)
+
+    for partition_num in toSend:
+        for node_ipp in META.GLOBAL_VIEW[partition_num]:
+            try:
+                content = json.dumps(toSend[partition_num])
+                resp = requests.put("http://" + node_ipp + "/key_dump", data={'content': content}, timeout=5)
+                break
+            except requests.exceptions.Timeout:
+                continue
+
 def addNode(update_ip):
     if update_ip not in fn.get_all_nodes():
-        fn.add_proxy([update_ip])
+        fn.add_proxy(update_ip)
         if len(fn.proxies() >= META.REPLICAS_PER_PART):
-            res = upgradeProxies() and rebalance()
-            return res
+            upgradeProxies()
+            for partition in META.GLOBAL_VIEW:
+                if partition == 0: # if proxy
+                    continue
+
+                for node_ipp in META.GLOBAL_VIEW[partition]:
+                    try:
+                        url = "http://" + node_ipp + "/rebalance"
+                        resp = requests.put(url, timeout=5)
+                        break
+                    except requests.exceptions.Timeout:
+                        continue
+        else:
+            # add node as proxy
 
 def removeNode(update_ip):
+    # remove node from partition
+    # if there is a proxy to upgrade,
+    # - Data Dump it
+    # - Give it kv/vc/timestamps
+    # - Update everyones global view/ directory
+    # if there is not a proxy to upgrade
+    # - rebalence
+    # - demote everything in partition to proxy
+
     if fn.is_replica(update_ip):
         # remove node from its partition
         upgradeProxies([update_ip])
     else:
         fn.remove_proxy(update_ip)
 
-def upgradeProxies(proxies=fn.proxies()[:]):
-    # proxies = fn.proxies()[:]
+def upgradeProxies():
+    proxies = fn.proxies()[:]
     fn.add_partition(proxies)
-    fn.clear_proxies() # SHOULD NOT BE CALLED FOR REMOVE
+    fn.clear_proxies()
 
     fn.generateDirectory(fn.count_partitions())
-    
+
     # data dump to give all proxies God Data from replicas
     try:
-            data = {
-                "global_view": META.GLOBAL_VIEW,
-                "directory": META.DIRECTORY,
-                "node_type": REPLICA,
-                "this_partition": fn.last_partition_id(),
-                "replicas_per_part": META.REPLICAS_PER_PART,
-            }
+        data = {
+            "global_view": fn.dictionaryToString(META.GLOBAL_VIEW),
+            "directory": fn.dictionaryToString(META.DIRECTORY),
+            "node_type": REPLICA,
+            "this_partition": fn.last_partition_id(),
+            "replicas_per_part": META.REPLICAS_PER_PART,
+        }
+        urls = ["http://" + node_ip + "/kv-store/duplicate_meta" for node_ip in proxies]
+        responses = fn.put_broadcast(data, urls)
+    except:
+        print("FAILED UPDATE PROXIES")
 
-            urls = ["http://" + node_ip + "/kv-store/duplicateview" for node_ip in proxies]
-            responses = fn.put_broadcast(data, urls)
+    # old code
+    # elif type == "remove":
+    #     # If just remove from REPLICAS, leave in VIEWS
+    #     if update_ip in META.REPLICAS:
+    #         META.REPLICAS.remove(update_ip)
+    #         for i in META.REPLICAS:
+    #             if IS_REPLICA and i is not META.REPLICAS[MY_ID]:
+    #                 try:
+    #                     requests.put("http://" + i + "/remove/",
+    #                                  data={'update_ip': update_ip}, timeout=5)
+    #                 except requests.exceptions.Timeout:
+    #                     continue
+    #
+    #     elif update_ip in PROXIES:
+    #         PROXIES.remove(update_ip)
+    #         for i in META.REPLICAS:
+    #             try:
+    #                 requests.put("http://" + i + "/remove/",
+    #                              data={'update_ip': update_ip}, timeout=5)
+    #             except requests.exceptions.Timeout:
+    #                 continue
+    #
+    #     return jsonify({"result": "success", "number_of_nodes": len(META.REPLICAS)})
+    #
+    # else:
+    #     return jsonify({"result": "failure", "replicas": str(META.REPLICAS)})
 
-            return fn.http_success(message)
-        except:
-            print("FAILED STUPID UPDATE")
-    
-    
+@app.route('/key_dump', methods=['PUT'])
+def key_dump():
+    update_content = json.loads(request.form.get('content'))
+    for key_info in update_content:
+        resp = kv.put(key_info['key'], key_info['value'], fn.stringToList(key_info['causal_payload']), int(key_info['timestamp'])
 
-
-
-
-
-
-    elif type == "remove":
-        # If just remove from REPLICAS, leave in VIEWS
-        if update_ip in META.REPLICAS:
-            META.REPLICAS.remove(update_ip)
-            for i in META.REPLICAS:
-                if IS_REPLICA and i is not META.REPLICAS[MY_ID]:
-                    try:
-                        requests.put("http://" + i + "/remove/",
-                                     data={'update_ip': update_ip}, timeout=5)
-                    except requests.exceptions.Timeout:
-                        continue
-
-        elif update_ip in PROXIES:
-            PROXIES.remove(update_ip)
-            for i in META.REPLICAS:
-                try:
-                    requests.put("http://" + i + "/remove/",
-                                 data={'update_ip': update_ip}, timeout=5)
-                except requests.exceptions.Timeout:
-                    continue
-
-        return jsonify({"result": "success", "number_of_nodes": len(META.REPLICAS)})
-
-    else:
-        return jsonify({"result": "failure", "replicas": str(META.REPLICAS)})
-
-def rebalance() # TODAY.. BUT NOT TODAY
 
 @app.route('/add', methods=['PUT'])
 def add():
@@ -349,7 +390,7 @@ def getGossip():
         if (compare_VC_results is None and my_ts_val > sent_ts_val) or compare_VC_results:
             # mine is bigger, save it
             to_update[key] = {"value": my_d_val,
-                              "causal_payload": my_vc_val, "timestamp": my_ts_val}
+"causal_payload": my_vc_val, "timestamp": my_ts_val}
         else:
             # theirs is bigger, update mine
             result, status_code = kv.put(
@@ -358,8 +399,6 @@ def getGossip():
     return json.dumps(to_update)
 
 # Quick check to see if it's alive
-
-
 @app.route('/hey', methods=['GET'])
 def hey():
     return (json.dumps({"result": "success"}), 200, {'Content-Type': 'application/json'})
@@ -372,8 +411,6 @@ def duplicateReplica(proxy_ipp):
                  data={"d": d, "vc": vc, "timestamp": timestamp})
 
 # omg did you hear what Becky did???
-
-
 def gossip(gossip_ipp):
     # Send all information to other node
     d, vc, timestamp = kv.getDictionaries()
@@ -381,18 +418,15 @@ def gossip(gossip_ipp):
     try:
         resp = requests.post("http://" + gossip_ipp + "/kv-store/gossip",
                              data={"d": d, "vc": vc, "timestamp": timestamp})
-        print("RESP")
-        print(vars(resp))
         resp = resp.json()
 
         # Gets info that it needs to update, and updates it's own data
         for key in resp:
             s, status_code = kv.put(
                 key, resp[key]["value"], resp[key]["causal_payload"], resp[key]["timestamp"])
-        return "SUCCESS"
+        return SUCCESS
     except:
-        return "FAILED"
-
+        return ERROR
 
 def findNewest(key):
     replica_req = []
@@ -466,12 +500,13 @@ background_thread = Thread(target=runGossip, args=())
 background_thread.start()
 
 
-@app.route('/kv-store/duplicateview', methods=['PUT'])
-def duplicateView():
-    META.REPLICAS = fn.stringToList(request.form.get('REPLICAS'))
-    VIEWS = fn.stringToList(request.form.get('VIEWS'))
-    return (json.dumps({"result": "success"}), 200, {'Content-Type': 'application/json'})
-
+@app.route('/kv-store/duplicate_meta', methods=['PUT'])
+def duplicate_meta():
+    META.GLOBAL_VIEW = fn.stringToDictionary(request.form.get('global_view'))
+    META.DIRECTORY = fn.stringToDictionary(request.form.get('directory'))
+    META.NODE_TYPE = request.form.get('node_type')
+    META.THIS_PARTITION = int(request.form.get('this_partition'))
+    META.REPLICAS_PER_PART = int(request.form.get('replicas_per_part'))
 
 if __name__ == '__main__':
     # Run Command
