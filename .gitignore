@@ -1,5 +1,5 @@
 .vscode/
-bash_scripts/
+bashscripts/
 wins_test.py
 mac_test.py
 members.txt
