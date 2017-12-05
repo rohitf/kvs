@@ -147,16 +147,28 @@ def onlyKeyCheck(key):
         return False, {"result": "error", "msg": "Key not valid"}, 403
     return True, {"result": "success"}, 200
 
-
 hashMax = 10000
 hasher = hashlib.sha1()
+
 # given a key and a list of partitions (where each partition is a list of
 # ip-port pairs for nodes in that partiotion), it returns a list of ip-port
 # pairs that the key is stored in
-def getPartitionID(key):
-    number_of_partitions = len(METADATA.GLOBAL_VIEW)
-    individual_size = int(hashMax/number_of_partitions)
+def getPartionId(key):
+    global DIRECTORY
     hasher.update(key)
     keyHash = int(hasher.hexdigest(), 16) % hashMax
-    val = int(math.ceil(keyHash/individual_size))
-    return val
+    for part in DIRECTORY:
+        if DIRECTORY[part][0] <= keyHash and DIRECTORY[part][1] >= keyHash:
+            return part
+    print("FAILURE in getPartionId")
+    return -1
+
+def generateDirectory(number_of_partitions):
+    global DIRECTORY
+    individual_size = int(hashMax/number_of_partitions)
+    extra = hashMax % number_of_partitions
+    m = 0
+    for x in range(0, number_of_partitions - 1):
+        DIRECTORY[x+1] = [m, (m+individual_size-1)]
+        m += individual_size
+    DIRECTORY[number_of_partitions] = [m, (m+individual_size-1 + extra)]
