@@ -153,14 +153,14 @@ hasher = hashlib.sha1()
 # given a key and a list of partitions (where each partition is a list of
 # ip-port pairs for nodes in that partiotion), it returns a list of ip-port
 # pairs that the key is stored in
-def getPartionId(key):
+def getPartitionId(key):
     global DIRECTORY
     hasher.update(key)
     keyHash = int(hasher.hexdigest(), 16) % hashMax
     for part in DIRECTORY:
         if DIRECTORY[part][0] <= keyHash and DIRECTORY[part][1] >= keyHash:
             return part
-    print("FAILURE in getPartionId")
+    print("FAILURE in getPartitionId")
     return -1
 
 def generateDirectory(number_of_partitions):

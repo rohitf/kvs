@@ -1,6 +1,7 @@
 #!/usr/bin/python
 import kv as kv
 import functions as fn
+import math
 from globals import *
 
 # Replica Specific Information
@@ -8,22 +9,26 @@ VIEWS_os_env = os.getenv('VIEW')  # Stores all views that this Node knows of
 VIEWS = []
 if VIEWS_os_env is not None:
     VIEWS = VIEWS_os_env.split(",")
-IP_PORT = os.getenv('IPPORT')
-MY_ID = int(IP_PORT[8:-5])
-REPLICAS_WANTED = os.getenv('K')  # K value given in command line
-if REPLICAS_WANTED is not None:
-    REPLICAS_WANTED = int(REPLICAS_WANTED)
-else:
-    REPLICAS_WANTED = 0
-# Stores and updates list of replicas, no proxies
-REPLICAS = VIEWS[:REPLICAS_WANTED]
-IS_REPLICA = IP_PORT in REPLICAS  # Is this node a replica
-PROXIES = VIEWS[len(REPLICAS):]
-EXTERNAL_IP = (IP_PORT[:-5])
-PORT = (IP_PORT[-4:])
+IPPORT = os.getenv('IPPORT') # Own ip port
+MY_ID = IPPORT[IPPORT.index(':')-1] # Unique node id (ex. 0, 1, 2)
+K = int(os.getenv('K'))  # K value given in command line
+
+# At init, proxies & replicas should be derived from views
+N = len(VIEWS)
+PARTITIONS = math.floor(N/K) # Number of partitions
+REPLICAS = VIEWS[:PARTITIONS * K] # List of ip ports of all replicas
+PROXIES = list(set(VIEWS) - set(REPLICAS)) # List of ip ports of remainder proxy nodes
+IS_REPLICA = IPPORT in REPLICAS # T/F if node is replica
+# Id of partition node is in, ALL nodes have one
+PARTITION_ID = (VIEWS.index(IPPORT)+1)/K # ex. [1, 1, 1, 2, 2, 2, 3, 3]
+EXTERNAL_IP = (IPPORT[:-5])
+PORT = (IPPORT[-4:])
+
+GLOBAL_VIEW = []
+LOCAL_VIEW = []
+DIRECTORY = []
 
 app = Flask(__name__)
-
 
 @app.route('/kv-store/<key>')
 def get(key):
@@ -219,7 +224,7 @@ def update():
                 # Don't send to own node id
                 if IS_REPLICA and i is not REPLICAS[MY_ID]:
                     try:
-                        requests.get("http://" + i + "/add/",
+                        requests.put("http://" + i + "/add/",
                                      data={'update_ip': update_ip}, timeout=5)
                     except requests.exceptions.Timeout:
                         continue
@@ -228,7 +233,7 @@ def update():
             PROXIES.append(update_ip)
             for i in REPLICAS:
                 try:
-                    requests.get("http://" + i + "/add/",
+                    requests.put("http://" + i + "/add/",
                                  data={'update_ip': update_ip}, timeout=5)
                 except requests.exceptions.Timeout:
                     continue
@@ -271,7 +276,7 @@ def add():
     if update_ip not in VIEWS:
         VIEWS.append(update_ip)
 
-    # Redundant check for replica or proxy because ?? just to avoid sending
+    # Redundant check for replica or proxy to avoid sending
     # request to self in update_view
     if (len(REPLICAS) + len(PROXIES)) <= REPLICAS_WANTED:
         if update_ip not in REPLICAS:
@@ -340,8 +345,6 @@ def getGossip():
     return json.dumps(to_update)
 
 # Quick check to see if it's alive
-
-
 @app.route('/hey', methods=['GET'])
 def hey():
     return (json.dumps({"result": "success"}), 200, {'Content-Type': 'application/json'})
@@ -354,8 +357,6 @@ def duplicateReplica(proxy_ipp):
                  data={"d": d, "vc": vc, "timestamp": timestamp})
 
 # omg did you hear what Becky did???
-
-
 def gossip(gossip_ipp):
     # Send all information to other node
     d, vc, timestamp = kv.getDictionaries()
@@ -431,9 +432,6 @@ def ping_failed(request, exception):
         except:
             print("CAN't find")
             continue
-
-# hmm...fixed
-
 
 def listToString(lst):
     m = '[' + ''.join(lst) + ']'
