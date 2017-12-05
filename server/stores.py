@@ -1,16 +1,20 @@
 from imports import *
 
-class METADATA:
+class META:
     # __slots__ = ("VIEW", "REPLICAS_WANTED", "PROXIES", "REPLICAS", "IP_PORT", "ID", "PORT", "EXTERNAL_IP")
 
-    VIEW = {}
-    REPLICAS_WANTED = None
+    REPLICAS_PER_PART = None
     PROXIES = None
     REPLICAS = None
     IP_PORT = None
     ID = None
     PORT = None
     EXTERNAL_IP = None
+    THIS_PARTITION = None
+    NODE_TYPE = None
+
+    GLOBAL_VIEW = {}
+    DIRECTORY = {}
 
 # # KVS variables
 # KVS = {

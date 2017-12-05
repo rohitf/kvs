@@ -26,7 +26,7 @@ def put_key(key):
     client_cp = request.form.get('causal_payload')
     timestamp = int(time.time())
 
-    if fn.is_replica(METADATA.ID):
+    if fn.is_replica(META.ID):
         if client_cp is not None:
             curr_cp = kv.get_payload(key)
 
@@ -58,13 +58,13 @@ if __name__ == '__main__':
         fn.add_node(node_id, node_type, view)
         r -= 1
     
-    # Update METADATA
-    METADATA.REPLICAS_WANTED = int(os.getenv('K'))
-    METADATA.IP_PORT = view
-    METADATA.ID = fn.get_id(view)
-    METADATA.REPLICAS = fn.get_replicas()
-    METADATA.PROXIES = fn.get_proxies()
-    METADATA.EXTERNAL_IP = os.getenv('IP')
-    METADATA.PORT = os.getenv('PORT')
+    # Update META
+    META.REPLICAS_WANTED = int(os.getenv('K'))
+    META.IP_PORT = view
+    META.ID = fn.get_id(view)
+    META.REPLICAS = fn.get_replicas()
+    META.PROXIES = fn.get_proxies()
+    META.EXTERNAL_IP = os.getenv('IP')
+    META.PORT = os.getenv('PORT')
 
-    app.run(host=METADATA.EXTERNAL_IP, port=int(METADATA.PORT), debug=True)
+    app.run(host=META.EXTERNAL_IP, port=int(META.PORT), debug=True)

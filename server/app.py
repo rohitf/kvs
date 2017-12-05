@@ -9,24 +9,27 @@ VIEWS_os_env = os.getenv('VIEW')  # Stores all views that this Node knows of
 VIEWS = []
 if VIEWS_os_env is not None:
     VIEWS = VIEWS_os_env.split(",")
-IPPORT = os.getenv('IPPORT') # Own ip port
-MY_ID = IPPORT[IPPORT.index(':')-1] # Unique node id (ex. 0, 1, 2)
-K = int(os.getenv('K'))  # K value given in command line
+    fn.generateGlobalView(VIEWS)
+
+META.IP_PORT = os.getenv('IPPORT') # Own ip port
+META.ID = META.GLOBAL_VIEW[META.THIS_PARTITION].find(META.IP_PORT)
+META.REPLICAS_PER_PART = int(os.getenv('K'))  # K value given in command line
+
+
 
 # At init, proxies & replicas should be derived from views
 N = len(VIEWS)
-PARTITIONS = math.floor(N/K) # Number of partitions
-REPLICAS = VIEWS[:PARTITIONS * K] # List of ip ports of all replicas
-PROXIES = list(set(VIEWS) - set(REPLICAS)) # List of ip ports of remainder proxy nodes
-IS_REPLICA = IPPORT in REPLICAS # T/F if node is replica
-# Id of partition node is in, ALL nodes have one
-PARTITION_ID = (VIEWS.index(IPPORT)+1)/K # ex. [1, 1, 1, 2, 2, 2, 3, 3]
-EXTERNAL_IP = (IPPORT[:-5])
-PORT = (IPPORT[-4:])
+num_of_partitions = math.floor(N/K) # Number of partitions
 
-GLOBAL_VIEW = []
-LOCAL_VIEW = []
-DIRECTORY = []
+META.REPLICAS = VIEWS[:num_of_partitions * META.REPLICAS_PER_PART] # List of ip ports of all replicas
+META.PROXIES = list(set(VIEWS) - set(META.REPLICAS)) # List of ip ports of remainder proxy nodes
+META.NODE_TYPE = getNodeType() # TODO implement this please someone
+IS_REPLICA = META.NODE_TYPE == REPLICA  # T/F if node is replica
+META.DIRECTORY = fn.generateDirectory(num_of_partitions)
+if IS_REPLICA:
+    META.THIS_PARTITION = (VIEWS.index(META.IP_PORT)+1)/META.REPLICAS_PER_PART # ex. [1, 1, 1, 2, 2, 2, 3, 3]
+META.EXTERNAL_IP = (META.IP_PORT[:-5])
+META.PORT = (META.IP_PORT[-4:])
 
 app = Flask(__name__)
 
@@ -35,16 +38,16 @@ def get(key):
     isKeyValid = fn.onlyKeyCheck(key)
     client_CP = request.form.get('causal_payload')
     if not client_CP or client_CP == "''":
-        client_CP = [0] * (MY_ID + 1)
-
+        client_CP = [0] * (META.REPLICAS_PER_PART)
     else:
         client_CP = fn.parseVC(client_CP)
-    if not isKeyValid[0]:
-        return (json.dumps(isKeyValid[1]), isKeyValid[2], {'Content-Type': 'application/json'})
 
-    if IS_REPLICA:
-        current_max_value, current_max_VC, current_max_timestamp = findNewest(
-            key)
+    if not isKeyValid[0]:
+        return fn.http_error(isKeyValid[1], isKeyValid[2])
+
+    if IS_REPLICA and fn.getPartitionId(key) == META.THIS_PARTITION:
+
+        current_max_value, current_max_VC, current_max_timestamp = findNewest(key)
         my_value, my_VC, my_timestamp = kv.get(key)
 
         no_result = current_max_value is None
@@ -57,131 +60,112 @@ def get(key):
             if success:
                 message = {"result": "success", "value": current_max_value, "node_id": MY_ID,
                            "causal_payload": current_max_VC, "timestamp": current_max_timestamp}
-                return (json.dumps(message), status_code, {'Content-Type': 'application/json'})
+                return fn.http_success(message, status_code)
             # The put fails then:
             a, message, status_code = fn.keyCheck(key, value)[1]
-            return (json.dumps(message), status_code, {'Content-Type': 'application/json'})
+            return fn.http_error(message, status_code)
         elif no_result:
-            return (json.dumps({"result": "error", "msg": "Key does not exist"}), 404, {'Content-Type': 'application/json'})
-
+            return fn.http_error({"result": "error", "msg": "Key does not exist"}, 404)
         message = {"result": "success", "value": current_max_value, "node_id": MY_ID,
                    "causal_payload": current_max_VC, "timestamp": current_max_timestamp}
-        return (json.dumps(message), status_code, {'Content-Type': 'application/json'})
+        return fn.http_error(message, status_code)
 
     # Proxy
     else:
-        for current_replica in REPLICAS:
+        correct_part = fn.getPartitionId(key)
+        for current_replica in META.GLOBAL_VIEW[correct_part]:
             try:
                 A = requests.get("http://" + current_replica + "/kv-store/" +
                                  key, data={'causal_payload': client_CP}, timeout=2)
                 status_code = A.status_code
                 response = A.json()
                 if status_code == 404:
-                    message = {"result": "error", "msg": "Key does not exist"}
-                else:
-                    message = {"result": response['result'], "value": response['value'], "node_id": MY_ID,
-                               "causal_payload": response['causal_payload'], "timestamp": response['timestamp']}
-                return (json.dumps(message), status_code, {'ContentType': 'application/json'})
+                    return fn.http_error({"result": "error", "msg": "Key does not exist"}, 404)
+                message = {"result": response['result'], "value": response['value'], "partition_id": META.THIS_PARTITION,
+                            "causal_payload": response['causal_payload'], "timestamp": response['timestamp']}
+                return fn.http_success(message, status_code)
             except requests.exceptions.Timeout:
                 continue
-        return (json.dumps({"result": "Error", "msg": "Server unavailable"}), 500, {'Content-Type': 'application/json'})
+        return fn.http_error({"result": "Error", "msg": "Server unavailable"}, 500)
 
 # Just return val, no checking with other nodes
-
-
 @app.route('/kv-store/verify/<key>')
 def stupidGet(key):
     value, causal_payload, timestamp = kv.get(key)
-    return (jsonify({"value": value, "causal_payload": causal_payload, "timestamp": timestamp}), 200, {'ContentType': 'application/json'})
-
+    message = {"value": value, "causal_payload": causal_payload, "timestamp": timestamp}
+    return fn.http_success(message, 200)
 
 @app.route('/kv-store/<key>', methods=['PUT'])
 def put(key):
     if not request.json:
-
-        # getting json seems to be right
-        # still get 500 error, doesn't start?
 
         val = request.form.get('val')
         client_CP = request.form.get('causal_payload')
         client_timestamp = int(time.time())
 
         if not client_CP or client_CP == "''":
-            client_CP = [0] * (MY_ID + 1)
-
+            client_CP = [0] * (META.REPLICAS_PER_PART)
         else:
             client_CP = fn.parseVC(client_CP)
 
         # Check if key uses valid characters, value is small enough, etc.
         isKeyValid = fn.keyCheck(key, val)
         if not isKeyValid[0]:
-            return (json.dumps(isKeyValid[1]), isKeyValid[2], {'Content-Type': 'application/json'})
+            return fn.http_error(isKeyValid[1], isKeyValid[2])
 
-        if IS_REPLICA:
-            # If the client's payload isn't equal or more recent to current
-            # payload, return failure
+        if IS_REPLICA and fn.getPartitionId(key) == META.THIS_PARTITION:
             my_val, my_vc, my_ts = kv.get(key)
 
-            # commented this out because equalityVC is called in compareVC
-            if not fn.compareVC(client_CP, my_vc):
-                return (json.dumps({"result": "error", "causal_payload": fn.deparseVC(client_CP), "msg": "Client payload not most recent, get again before trying again"}), 404, {'Content-Type': 'application/json'})
+            # Client has old CP
+            if fn.compare_payload(my_vc, client_CP) == LATEST:
+                message = {"result": "error", "causal_payload": fn.deparseVC(client_CP), "msg": "Client payload not most recent, get again before trying again"}
+                return fn.http_error(message, 404)
+
             else:
-                current_max_value, current_max_VC, current_max_timestamp = findNewest(
-                    key)
-                # print("MEOW1: current_max_VC ", current_max_VC, file=sys.stderr)
-                # need to fix!! why does it return causal payload as a str at times
-                # i changed findnewest to only return three variables, not a dict of three
-                # if current_max_VC == "causal_payload":
-                if len(current_max_VC) < len(REPLICAS):
-                    diff = len(REPLICAS) - len(current_max_VC)
+                current_max_value, current_max_VC, current_max_timestamp = findNewest(key)
+                if len(current_max_VC) < META.REPLICAS_PER_PART:
+                    diff = len(META.REPLICAS_PER_PART) - len(current_max_VC)
                     current_max_VC = [0] * diff
 
-                compare_VC_results = fn.compareVC(
-                    client_CP, current_max_VC)
+                compare_VC_results = fn.compare_payload(current_max_VC, client_CP)
 
                 if fn.equalityVC(client_CP, current_max_VC):
                     # update value + increment
-                    client_CP[MY_ID] += 1
-                    result, status_code = kv.put(
-                        key, val, client_CP, client_timestamp)
-                    message = {"result": "success", "value": val, "node_id": MY_ID, "causal_payload": fn.deparseVC(
+                    client_CP[fn.getNodeID(META.IP_PORT)] += 1
+                    result, status_code = kv.put(key, val, client_CP, client_timestamp)
+                    message = {"result": "success", "value": val, "partition_id": META.THIS_PARTITION, "causal_payload": fn.deparseVC(
                         client_CP), "timestamp": str(client_timestamp)}
-                    return (json.dumps(message), status_code, {'ContentType': 'application/json'})
-
-                elif (compare_VC_results is None and client_timestamp > int(current_max_timestamp)) or compare_VC_results:
+                    return fn.http_success(message, status_code)
+                elif (compare_VC_results == CONCURRENT and client_timestamp > int(current_max_timestamp)) or compare_VC_results == UPDATE:
                     # increment client_CP and update our value
-                    # print("its me", file=sys.stderr)
-                    client_CP[MY_ID] += 1
-                    result, status_code = kv.put(
-                        key, val, client_CP, client_timestamp)
-                    message = {"result": "success", "value": val, "node_id": MY_ID, "causal_payload": fn.deparseVC(
+                    client_CP[fn.getNodeID(META.IP_PORT)] += 1
+                    result, status_code = kv.put(key, val, client_CP, client_timestamp)
+                    message = {"result": "success", "value": val, "partition_id": META.THIS_PARTITION, "causal_payload": fn.deparseVC(
                         client_CP), "timestamp": str(client_timestamp)}
-                    return (json.dumps(message), status_code, {'ContentType': 'application/json'})
-
+                    return fn.http_success(message, status_code)
                 else:
-                    # client is smaller
-                    # update our value and return failure
-                    result, status_code = kv.put(
-                        key, current_max_value, current_max_VC, current_max_timestamp)
-                    message = {"result": "failure", "value": current_max_value, "node_id": MY_ID,
+                    # client is smaller: update our value and return failure
+                    result, status_code = kv.put(key, current_max_value, current_max_VC, current_max_timestamp)
+                    message = {"result": "failure", "value": current_max_value, "partition_id": META.THIS_PARTITION,
                                "causal_payload": fn.deparseVC(client_CP), "timestamp": str(current_timestamp)}
-                    return (json.dumps(message), status_code, {'ContentType': 'application/json'})
+                    return fn.http_error(message, status_code)
         else:
+            correct_part = fn.getPartitionId(key)
             send_data = {'causal_payload': client_CP, 'val': val}
-            for current_replica in REPLICAS:
+            for current_replica in META.GLOBAL_VIEW[correct_part]:
                 try:
                     A = requests.put("http://" + current_replica +
                                      "/kv-store/" + key, data=send_data, timeout=2)
                     status_code = A.status_code
                     response = A.json()
-                    message = {"result": response['result'], "value": response['value'], "node_id": MY_ID,
+                    message = {"result": response['result'], "value": response['value'], "partition_id": META.THIS_PARTITION,
                                "causal_payload": response['causal_payload'], "timestamp": response['timestamp']}
-                    return (json.dumps(message), status_code, {'ContentType': 'application/json'})
+                    return fn.http_success(message, status_code) # this could be error or success
                 except requests.exceptions.Timeout:
                     continue
-            return (json.dumps({"result": "Error", "msg": "Server unavailable"}), 500, {'Content-Type': 'application/json'})
+            return fn.http_error({"result": "Error", "msg": "Server unavailable"}, 500)
     else:
-        return (json.dumps({"result": "Error", "msg": "No VALUE provided"}), 403, {'Content-Type': 'application/json'})
+        return fn.http_error({"result": "Error", "msg": "No VALUE provided"}, 403)
 
 
 @app.route('/kv-store/get_node_details')
@@ -193,59 +177,56 @@ def get_node():
 
 @app.route('/kv-store/get_all_replicas')
 def get_all():
-    r = "success" if REPLICAS else "failure"
-    return (jsonify({"result": r, "replicas": REPLICAS}))
+    r = "success" if META.REPLICAS else "failure"
+    return (jsonify({"result": r, "replicas": META.REPLICAS}))
 
 
 @app.route('/kv-store/update_view', methods=['PUT'])
 def update():
-    global VIEWS
-    global REPLICAS
-
     type = request.args.get('type')
     update_ip = request.form.get('ip_port')
 
     if type == "add":
         print(update_ip)
-        if update_ip not in VIEWS:
-            VIEWS.append(update_ip)
+        if update_ip not in getLocalView():
+            getLocalView().append(update_ip)
         try:
             m = requests.put("http://" + update_ip + "/kv-store/duplicateview", data={
-                             'REPLICAS': listToString(REPLICAS), 'VIEWS': listToString(VIEWS)})
+                             'REPLICAS': fn.listToString(META.REPLICAS), 'VIEWS': fn.listToString(VIEWS)})
             print(m)
         except:
             print("______________________ERROR_______________________")
         # new ip should be replica if Nodes <= k
         # check for live nodes? just assume
-        if len(REPLICAS) < REPLICAS_WANTED:
-            REPLICAS.append(update_ip)
+        if len(META.REPLICAS) < REPLICAS_WANTED:
+            META.REPLICAS.append(update_ip)
             duplicateReplica(update_ip)
-            for i in REPLICAS:
+            for i in META.REPLICAS:
                 # Don't send to own node id
-                if IS_REPLICA and i is not REPLICAS[MY_ID]:
+                if IS_REPLICA and i is not META.REPLICAS[MY_ID]:
                     try:
                         requests.put("http://" + i + "/add/",
                                      data={'update_ip': update_ip}, timeout=5)
                     except requests.exceptions.Timeout:
                         continue
         # else if proxy
-        elif len(REPLICAS) > REPLICAS_WANTED:
+        elif len(META.REPLICAS) > REPLICAS_WANTED:
             PROXIES.append(update_ip)
-            for i in REPLICAS:
+            for i in META.REPLICAS:
                 try:
                     requests.put("http://" + i + "/add/",
                                  data={'update_ip': update_ip}, timeout=5)
                 except requests.exceptions.Timeout:
                     continue
 
-        return jsonify({"msg": "success", "node_id": VIEWS.index(update_ip), "number_of_nodes": len(REPLICAS)})
+        return jsonify({"msg": "success", "node_id": VIEWS.index(update_ip), "number_of_nodes": len(META.REPLICAS)})
 
     elif type == "remove":
         # If just remove from REPLICAS, leave in VIEWS
-        if update_ip in REPLICAS:
-            REPLICAS.remove(update_ip)
-            for i in REPLICAS:
-                if IS_REPLICA and i is not REPLICAS[MY_ID]:
+        if update_ip in META.REPLICAS:
+            META.REPLICAS.remove(update_ip)
+            for i in META.REPLICAS:
+                if IS_REPLICA and i is not META.REPLICAS[MY_ID]:
                     try:
                         requests.put("http://" + i + "/remove/",
                                      data={'update_ip': update_ip}, timeout=5)
@@ -254,45 +235,39 @@ def update():
 
         elif update_ip in PROXIES:
             PROXIES.remove(update_ip)
-            for i in REPLICAS:
+            for i in META.REPLICAS:
                 try:
                     requests.put("http://" + i + "/remove/",
                                  data={'update_ip': update_ip}, timeout=5)
                 except requests.exceptions.Timeout:
                     continue
 
-        return jsonify({"result": "success", "number_of_nodes": len(REPLICAS)})
+        return jsonify({"result": "success", "number_of_nodes": len(META.REPLICAS)})
 
     else:
-        return jsonify({"result": "failure", "replicas": str(REPLICAS)})
+        return jsonify({"result": "failure", "replicas": str(META.REPLICAS)})
 
 
 @app.route('/add', methods=['PUT'])
 def add():
-    global VIEWS
-    global REPLICAS
-
     update_ip = request.form.get('update_ip')
     if update_ip not in VIEWS:
         VIEWS.append(update_ip)
 
     # Redundant check for replica or proxy to avoid sending
     # request to self in update_view
-    if (len(REPLICAS) + len(PROXIES)) <= REPLICAS_WANTED:
-        if update_ip not in REPLICAS:
-            REPLICAS.append(update_ip)
-    elif (len(REPLICAS) + len(PROXIES)) > REPLICAS_WANTED:
+    if (len(META.REPLICAS) + len(PROXIES)) <= REPLICAS_WANTED:
+        if update_ip not in META.REPLICAS:
+            META.REPLICAS.append(update_ip)
+    elif (len(META.REPLICAS) + len(PROXIES)) > REPLICAS_WANTED:
         PROXIES.append(update_ip)
 
 
 @app.route('/remove', methods=['PUT'])
 def remove():
-    global VIEWS
-    global REPLICAS
-
     update_ip = request.form.get('update_ip')
-    if update_ip in REPLICAS:
-        REPLICAS.remove(update_ip)
+    if update_ip in META.REPLICAS:
+        META.REPLICAS.remove(update_ip)
 
     elif update_ip in PROXIES:
         PROXIES.remove(update_ip)
@@ -380,7 +355,7 @@ def gossip(gossip_ipp):
 def findNewest(key):
     replica_req = []
     current_max_value, current_max_VC, current_max_timestamp = kv.get(key)
-    for current_replica in REPLICAS:
+    for current_replica in META.REPLICAS:
         if current_replica == IP_PORT:
             continue
 
@@ -415,7 +390,7 @@ def findNewest(key):
 def ping():
     while True:
         reqs = [grequests.get("http://" + node_address + "/hey", timeout=5)
-                for node_address in REPLICAS]
+                for node_address in META.REPLICAS]
         grequests.map(reqs, exception_handler=ping_failed)
         time.sleep(2)
 
@@ -423,28 +398,19 @@ def ping():
 def ping_failed(request, exception):
     url = request.url.split("//")[1].split("/")[0]
     print("PING Failed: " + url)
-    for m in REPLICAS:
+    for m in META.REPLICAS:
         try:
             requests.put(
                 "http://" + m + "/kv-store/update_view?type=remove", data={'url': url}, timeout=5)
             print("SUCC")
             break
         except:
-            print("CAN't find")
+            print("CAN'T find")
             continue
-
-def listToString(lst):
-    m = '[' + ''.join(lst) + ']'
-    return m
-
-
-def stringToList(stg):
-    return (stg[1:-1]).split(",")
-
 
 def runGossip():
     while True:
-        for r in REPLICAS:
+        for r in META.REPLICAS:
             status = gossip(r)
     sleep(10)
 
@@ -458,10 +424,8 @@ background_thread.start()
 
 @app.route('/kv-store/duplicateview', methods=['PUT'])
 def duplicateView():
-    global REPLICAS
-    global VIEWS
-    REPLICAS = stringToList(request.form.get('REPLICAS'))
-    VIEWS = stringToList(request.form.get('VIEWS'))
+    META.REPLICAS = fn.stringToList(request.form.get('REPLICAS'))
+    VIEWS = fn.stringToList(request.form.get('VIEWS'))
     return (json.dumps({"result": "success"}), 200, {'Content-Type': 'application/json'})
 
 

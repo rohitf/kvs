@@ -21,7 +21,7 @@ def put(key, value="", causal_payload=[0, 0, 0, 0]):
     }
 
     store[key] = value
-    status_code = 200 if fn.is_replica(METADATA.ID) else 201
+    status_code = 200 if fn.is_replica(META.ID) else 201
     return fn.local_success("", status_code)
 
 

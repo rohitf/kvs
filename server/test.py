@@ -3,8 +3,8 @@ from globals import *
 
 
 def test_metadata():
-    METADATA.ewfe = 7
-    METADATA.ID = 5
-    print (vars(METADATA))
+    META.ewfe = 7
+    META.ID = 5
+    print (vars(META))
 
 test_metadata()
