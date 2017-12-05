@@ -12,9 +12,10 @@ class META:
     EXTERNAL_IP = None
     THIS_PARTITION = None
     NODE_TYPE = None
-
     GLOBAL_VIEW = {0: []}
     DIRECTORY = {}
+
+    # TODO: set smart defaults above
 
 # # KVS variables
 # KVS = {

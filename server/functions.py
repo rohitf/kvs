@@ -36,18 +36,20 @@ def get_replicas(partition_id):
 def proxies():
     return META.GLOBAL_VIEW[0]
 
-def is_replica(node_id):
-    return VIEW[node_id]["type"] == REPLICA
-
 def add_replicas(partition_id, *node_ips):
     META.GLOBAL_VIEW[partition_id].extend(node_ips)
 
-def add_proxies(*node_ips):
-    META.GLOBAL_VIEW[0].extend(node_ips)
-    
+def add_proxy(node_ip):
+    META.GLOBAL_VIEW[0].append(node_ip)
+
+def remove_proxy(node_ip):
+    META.GLOBAL_VIEW[0].remove(node_ip)
+
 def clear_proxies():
     META.GLOBAL_VIEW[0] = []
-    
+
+def node_type(node_ip):
+    return REPLICA if node_ip in get_all_replicas() else PROXY
 
 def http_success(payload, status_code):
     resp = ({json.dumps(payload), status_code, {
@@ -175,7 +177,7 @@ def onlyKeyCheck(key):
     return True, {"result": "success"}, 200
 
 def listToString(lst):
-    m = '[' + ''.join(lst) + ']'
+    m = '[' + ','.join(map(str, lst)) + ']'
     return m
 
 def stringToList(stg):
@@ -231,6 +233,9 @@ def add_partition(nodes=[]):
 
 def count_partitions():
     return len(META.GLOBAL_VIEW) - 1
+
+def last_partition_id():
+    return META.GLOBAL_VIEW[count_partitions()]
 
 def getLocalView():
     return META.GLOBAL_VIEW[META.THIS_PARTITION]

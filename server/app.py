@@ -215,53 +215,48 @@ def update():
 
 def addNode(update_ip):
     if update_ip not in fn.get_all_nodes():
-        fn.add_proxies([update_ip])
+        fn.add_proxy([update_ip])
         if len(fn.proxies() >= META.REPLICAS_PER_PART):
-            res = upgradeProxies()
+            res = upgradeProxies() and rebalance()
             return res
 
-def upgradeProxies():
-    fn.add_partition(fn.proxies())
-    fn.clear_proxies()
+def removeNode(update_ip):
+    if fn.is_replica(update_ip):
+        # remove node from its partition
+        upgradeProxies([update_ip])
+    else:
+        fn.remove_proxy(update_ip)
+
+def upgradeProxies(proxies=fn.proxies()[:]):
+    # proxies = fn.proxies()[:]
+    fn.add_partition(proxies)
+    fn.clear_proxies() # SHOULD NOT BE CALLED FOR REMOVE
 
     fn.generateDirectory(fn.count_partitions())
-    # data dump
-    fn.rebalance() #doesn't exist!
+    
+    # data dump to give all proxies God Data from replicas
+    try:
+            data = {
+                "global_view": META.GLOBAL_VIEW,
+                "directory": META.DIRECTORY,
+                "node_type": REPLICA,
+                "this_partition": fn.last_partition_id(),
+                "replicas_per_part": META.REPLICAS_PER_PART,
+            }
+
+            urls = ["http://" + node_ip + "/kv-store/duplicateview" for node_ip in proxies]
+            responses = fn.put_broadcast(data, urls)
+
+            return fn.http_success(message)
+        except:
+            print("FAILED STUPID UPDATE")
+    
     
 
-        # print(update_ip)
-        # if update_ip not in getLocalView():
-        #     getLocalView().append(update_ip)
-        # try:
-        #     m = requests.put("http://" + update_ip + "/kv-store/duplicateview", data={
-        #                      'REPLICAS': fn.listToString(META.REPLICAS), 'VIEWS': fn.listToString(VIEWS)})
-        #     print(m)
-        # except:
-        #     print("______________________ERROR_______________________")
-        # # new ip should be replica if Nodes <= k
-        # # check for live nodes? just assume
-        # if len(META.REPLICAS) < REPLICAS_WANTED:
-        #     META.REPLICAS.append(update_ip)
-        #     duplicateReplica(update_ip)
-        #     for i in META.REPLICAS:
-        #         # Don't send to own node id
-        #         if IS_REPLICA and i is not META.REPLICAS[MY_ID]:
-        #             try:
-        #                 requests.put("http://" + i + "/add/",
-        #                              data={'update_ip': update_ip}, timeout=5)
-        #             except requests.exceptions.Timeout:
-        #                 continue
-        # else if proxy
-        # elif len(META.REPLICAS) > REPLICAS_WANTED:
-        #     PROXIES.append(update_ip)
-        #     for i in META.REPLICAS:
-        #         try:
-        #             requests.put("http://" + i + "/add/",
-        #                          data={'update_ip': update_ip}, timeout=5)
-        #         except requests.exceptions.Timeout:
-        #             continue
 
-        return jsonify({"msg": "success", "node_id": VIEWS.index(update_ip), "number_of_nodes": len(META.REPLICAS)})
+
+
+
 
     elif type == "remove":
         # If just remove from REPLICAS, leave in VIEWS
@@ -289,6 +284,7 @@ def upgradeProxies():
     else:
         return jsonify({"result": "failure", "replicas": str(META.REPLICAS)})
 
+def rebalance() # TODAY.. BUT NOT TODAY
 
 @app.route('/add', methods=['PUT'])
 def add():
