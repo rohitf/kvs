@@ -21,7 +21,7 @@ def get_replicas():
     return {node: val for (node, val) in VIEW.items() if node.type == REPLICA}
 
 
-def get_proxies():
+def proxies():
     return {node: val for (node, val) in VIEW.items() if node.type != REPLICA}
 
 

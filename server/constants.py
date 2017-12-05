@@ -1,6 +1,10 @@
 from imports import *
 
 # Define constants
+
+SUCCESS = "success"
+ERROR = "error"
+
 REPLICA = "replica"
 PROXY = "proxy"
 

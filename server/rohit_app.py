@@ -63,7 +63,7 @@ if __name__ == '__main__':
     META.IP_PORT = view
     META.ID = fn.get_id(view)
     META.REPLICAS = fn.get_replicas()
-    META.PROXIES = fn.get_proxies()
+    META.PROXIES = fn.proxies()
     META.EXTERNAL_IP = os.getenv('IP')
     META.PORT = os.getenv('PORT')
 

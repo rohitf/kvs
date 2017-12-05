@@ -11,20 +11,17 @@ from globals import *
 # General functions
 # Returns the URL of a random replica
 
-
-def random_replica():
-    replicas = get_replicas()
-    return replicas[0].ip_port
-
-
 def count_nodes():
-    return len(get_all_replicas() + get_proxies())
+    return len(get_all_replicas() + proxies())
 
 def get_node_type():
-    return PROXY if META.IP_PORT in get_proxies() else REPLICA
+    return PROXY if META.IP_PORT in proxies() else REPLICA
 
 def get_id(ip_port):
     return ip_port[8:-5]
+
+def get_all_nodes():
+    return get_all_replicas().extend(proxies())
 
 def get_all_replicas():
     all_replicas = []
@@ -36,20 +33,21 @@ def get_all_replicas():
 def get_replicas(partition_id):
     return META.GLOBAL_VIEW[partition_id]
 
-def get_proxies():
+def proxies():
     return META.GLOBAL_VIEW[0]
-
 
 def is_replica(node_id):
     return VIEW[node_id]["type"] == REPLICA
 
+def add_replicas(partition_id, *node_ips):
+    META.GLOBAL_VIEW[partition_id].extend(node_ips)
 
-def add_node(node_id, node_type, node_ip_port):
-    META.VIEW[node_id] = {
-        "ip_port": node_ip_port,
-        "type": node_type
-    }
-
+def add_proxies(*node_ips):
+    META.GLOBAL_VIEW[0].extend(node_ips)
+    
+def clear_proxies():
+    META.GLOBAL_VIEW[0] = []
+    
 
 def http_success(payload, status_code):
     resp = ({json.dumps(payload), status_code, {
@@ -114,9 +112,18 @@ def compare_payload(VC1=[0] * META.REPLICAS_PER_PART, VC2=[0] * META.REPLICAS_PE
 
     return LATEST if clockDiffs[0] > 0 else UPDATE
 
+def put_broadcast(params, urls):
+    rs = [grequests.put(url, data=params, timeout=5) for url in urls]
+    grequests.map(rs, exception_handler=broadcast_failed)
+
+    return rs
+
+def broadcast_failed(request, exception):
+    url = request.url.split("//")[1].split("/")[0]
+    print("\nBROADCAST FAILED: " + url)
+
+
 # Check if two vector clocks are equal
-
-
 def equalityVC(VC1, VC2):
     if len(VC1) < len(VC2):
         diff = len(VC1) - len(VC2)
@@ -208,9 +215,7 @@ def generateGlobalView(all_views):
 
     for i in range(len(all_views)):
         if i % split == 0:  # partition is full, so create new one
-            new_partition_id = len(GV) + 1
-            GV[new_partition_id] = []
-        
+            add_partition() 
         GV[len(GV)].append(all_views[i])
 
     # check if last partition needs to become proxies
@@ -219,6 +224,13 @@ def generateGlobalView(all_views):
         temp = GV[last_partition_index]
         del GV[last_partition_index]
         GV[0] = temp
+        
+def add_partition(nodes=[]):
+    new_partition_index = len(META.GLOBAL_VIEW) + 1
+    META.GLOBAL_VIEW[new_partition_index] = nodes[:] # pass a shallow copy of the nodes to avoid unwanted references
+
+def count_partitions():
+    return len(META.GLOBAL_VIEW) - 1
 
 def getLocalView():
     return META.GLOBAL_VIEW[META.THIS_PARTITION]
