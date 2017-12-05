@@ -2,13 +2,10 @@
 #     Team Valetta             #
 #     November 21st 2017       #
 
-# Check if two vector clocks, VC1 & VC2 are comparable, if not, returns False
-# If they are comparable, then it returns True to show that they are comparable
-# and a second return, True or False, depending on if VC1 is bigger than VC2
-# This function returns None if the vector clocks are the same
-
 import re
 import sys
+import hashlib
+import math
 from globals import *
 
 # General functions
@@ -95,7 +92,7 @@ def compareVC(VC1, VC2):
     if not sameSign:
         return None  # Concurrent
 
-    return True if clockDiffs[0] >= 0 else False 
+    return True if clockDiffs[0] >= 0 else False
 
 # Check if two vector clocks are equal
 
@@ -149,3 +146,17 @@ def onlyKeyCheck(key):
     if not re.match('^[0-9a-zA-Z_]*$', key) or len(key) > 200 or len(key) == 0:
         return False, {"result": "error", "msg": "Key not valid"}, 403
     return True, {"result": "success"}, 200
+
+
+hashMax = 10000
+hasher = hashlib.sha1()
+# given a key and a list of partitions (where each partition is a list of
+# ip-port pairs for nodes in that partiotion), it returns a list of ip-port
+# pairs that the key is stored in
+def getPartitionID(key):
+    number_of_partitions = len(METADATA.GLOBAL_VIEW)
+    individual_size = int(hashMax/number_of_partitions)
+    hasher.update(key)
+    keyHash = int(hasher.hexdigest(), 16) % hashMax
+    val = int(math.ceil(keyHash/individual_size))
+    return val
