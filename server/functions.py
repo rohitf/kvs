@@ -18,19 +18,26 @@ def random_replica():
 
 
 def count_nodes():
-    return len(VIEW)
+    return len(get_all_replicas() + get_proxies())
 
+def get_node_type():
+    return PROXY if META.IP_PORT in get_proxies() else REPLICA
 
 def get_id(ip_port):
     return ip_port[8:-5]
 
+def get_all_replicas():
+    all_replicas = []
+    for partition in META.GLOBAL_VIEW:
+        all_replicas.extend(partition)
+    
+    return all_replicas
 
-def get_replicas():
-    return {node: val for (node, val) in VIEW.items() if node.type == REPLICA}
-
+def get_replicas(partition_id):
+    return META.GLOBAL_VIEW[partition_id]
 
 def get_proxies():
-    return {node: val for (node, val) in VIEW.items() if node.type != REPLICA}
+    return META.GLOBAL_VIEW[0]
 
 
 def is_replica(node_id):
@@ -192,15 +199,26 @@ def generateDirectory(num_of_partitions):
         m += individual_size
     META.DIRECTORY[num_of_partitions] = [m, (m+individual_size-1 + extra)]
 
-def generateGlobalView(ALL_VIEWS):
+def generateGlobalView(all_views):
+    if all_views is None:
+        return
+
     split = META.REPLICAS_PER_PART
-    local_views = []
-    for i in range(1, len(ALL_VIEWS) + 1):
-        if i%split == 0: # partition is full, so create new one
-            new_partition_id = len(META.GLOBAL_VIEW) + 1
-            META.GLOBAL_VIEW[new_partition_id] = []
-        else:
-            META.GLOBAL_VIEW[len(META.GLOBAL_VIEW)].append(ALL_VIEWS[i-1])
+    GV = META.GLOBAL_VIEW
+
+    for i in range(len(all_views)):
+        if i % split == 0:  # partition is full, so create new one
+            new_partition_id = len(GV) + 1
+            GV[new_partition_id] = []
+        
+        GV[len(GV)].append(all_views[i])
+
+    # check if last partition needs to become proxies
+    last_partition_index = len(GV)
+    if len(GV[last_partition_index]) < META.REPLICAS_PER_PART:
+        temp = GV[last_partition_index]
+        del GV[last_partition_index]
+        GV[0] = temp
 
 def getLocalView():
     return META.GLOBAL_VIEW[META.THIS_PARTITION]

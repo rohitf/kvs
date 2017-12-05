@@ -4,34 +4,36 @@ import functions as fn
 import math
 from globals import *
 
+
 # Replica Specific Information
 VIEWS_os_env = os.getenv('VIEW')  # Stores all views that this Node knows of
-VIEWS = []
+META.IP_PORT = os.getenv('IPPORT')  # Own ip port
+
 if VIEWS_os_env is not None:
     VIEWS = VIEWS_os_env.split(",")
     fn.generateGlobalView(VIEWS)
 
-META.IP_PORT = os.getenv('IPPORT') # Own ip port
-META.ID = META.GLOBAL_VIEW[META.THIS_PARTITION].find(META.IP_PORT)
-META.REPLICAS_PER_PART = int(os.getenv('K'))  # K value given in command line
+    META.ID = META.GLOBAL_VIEW[META.THIS_PARTITION].find(META.IP_PORT)
+    # K value given in command line
+    META.REPLICAS_PER_PART = int(os.getenv('K'))
 
+    # At init, proxies & replicas should be derived from views
+    N = len(VIEWS)
+    num_of_partitions = math.floor(
+        N / META.REPLICAS_PER_PART)  # Number of partitions
+    fn.generateDirectory(num_of_partitions)
 
+    META.NODE_TYPE = fn.get_node_type()
+    IS_REPLICA = META.NODE_TYPE == REPLICA  # T/F if node is replica
 
-# At init, proxies & replicas should be derived from views
-N = len(VIEWS)
-num_of_partitions = math.floor(N/K) # Number of partitions
-
-META.REPLICAS = VIEWS[:num_of_partitions * META.REPLICAS_PER_PART] # List of ip ports of all replicas
-META.PROXIES = list(set(VIEWS) - set(META.REPLICAS)) # List of ip ports of remainder proxy nodes
-META.NODE_TYPE = getNodeType() # TODO implement this please someone
-IS_REPLICA = META.NODE_TYPE == REPLICA  # T/F if node is replica
-META.DIRECTORY = fn.generateDirectory(num_of_partitions)
 if IS_REPLICA:
-    META.THIS_PARTITION = (VIEWS.index(META.IP_PORT)+1)/META.REPLICAS_PER_PART # ex. [1, 1, 1, 2, 2, 2, 3, 3]
+    META.THIS_PARTITION = (VIEWS.index(META.IP_PORT) + 1) / META.REPLICAS_PER_PART
+
 META.EXTERNAL_IP = (META.IP_PORT[:-5])
 META.PORT = (META.IP_PORT[-4:])
 
 app = Flask(__name__)
+
 
 @app.route('/kv-store/<key>')
 def get(key):
@@ -47,7 +49,8 @@ def get(key):
 
     if IS_REPLICA and fn.getPartitionId(key) == META.THIS_PARTITION:
 
-        current_max_value, current_max_VC, current_max_timestamp = findNewest(key)
+        current_max_value, current_max_VC, current_max_timestamp = findNewest(
+            key)
         my_value, my_VC, my_timestamp = kv.get(key)
 
         no_result = current_max_value is None
@@ -82,18 +85,22 @@ def get(key):
                 if status_code == 404:
                     return fn.http_error({"result": "error", "msg": "Key does not exist"}, 404)
                 message = {"result": response['result'], "value": response['value'], "partition_id": META.THIS_PARTITION,
-                            "causal_payload": response['causal_payload'], "timestamp": response['timestamp']}
+                           "causal_payload": response['causal_payload'], "timestamp": response['timestamp']}
                 return fn.http_success(message, status_code)
             except requests.exceptions.Timeout:
                 continue
         return fn.http_error({"result": "Error", "msg": "Server unavailable"}, 500)
 
 # Just return val, no checking with other nodes
+
+
 @app.route('/kv-store/verify/<key>')
 def stupidGet(key):
     value, causal_payload, timestamp = kv.get(key)
-    message = {"value": value, "causal_payload": causal_payload, "timestamp": timestamp}
+    message = {"value": value, "causal_payload": causal_payload,
+               "timestamp": timestamp}
     return fn.http_success(message, 200)
+
 
 @app.route('/kv-store/<key>', methods=['PUT'])
 def put(key):
@@ -118,7 +125,8 @@ def put(key):
 
             # Client has old CP
             if fn.compare_payload(my_vc, client_CP) == LATEST:
-                message = {"result": "error", "causal_payload": fn.deparseVC(client_CP), "msg": "Client payload not most recent, get again before trying again"}
+                message = {"result": "error", "causal_payload": fn.deparseVC(
+                    client_CP), "msg": "Client payload not most recent, get again before trying again"}
                 return fn.http_error(message, 404)
 
             else:
@@ -127,27 +135,31 @@ def put(key):
                     diff = len(META.REPLICAS_PER_PART) - len(current_max_VC)
                     current_max_VC = [0] * diff
 
-                compare_VC_results = fn.compare_payload(current_max_VC, client_CP)
+                compare_VC_results = fn.compare_payload(
+                    current_max_VC, client_CP)
 
                 if fn.equalityVC(client_CP, current_max_VC):
                     # update value + increment
                     client_CP[fn.getNodeID(META.IP_PORT)] += 1
-                    result, status_code = kv.put(key, val, client_CP, client_timestamp)
+                    result, status_code = kv.put(
+                        key, val, client_CP, client_timestamp)
                     message = {"result": "success", "value": val, "partition_id": META.THIS_PARTITION, "causal_payload": fn.deparseVC(
                         client_CP), "timestamp": str(client_timestamp)}
                     return fn.http_success(message, status_code)
                 elif (compare_VC_results == CONCURRENT and client_timestamp > int(current_max_timestamp)) or compare_VC_results == UPDATE:
                     # increment client_CP and update our value
                     client_CP[fn.getNodeID(META.IP_PORT)] += 1
-                    result, status_code = kv.put(key, val, client_CP, client_timestamp)
+                    result, status_code = kv.put(
+                        key, val, client_CP, client_timestamp)
                     message = {"result": "success", "value": val, "partition_id": META.THIS_PARTITION, "causal_payload": fn.deparseVC(
                         client_CP), "timestamp": str(client_timestamp)}
                     return fn.http_success(message, status_code)
                 else:
                     # client is smaller: update our value and return failure
-                    result, status_code = kv.put(key, current_max_value, current_max_VC, current_max_timestamp)
+                    result, status_code = kv.put(
+                        key, current_max_value, current_max_VC, current_max_timestamp)
                     message = {"result": "failure", "value": current_max_value, "partition_id": META.THIS_PARTITION,
-                               "causal_payload": fn.deparseVC(client_CP), "timestamp": str(current_timestamp)}
+                               "causal_payload": fn.deparseVC(client_CP), "timestamp": str(current_max_timestamp)}
                     return fn.http_error(message, status_code)
         else:
             correct_part = fn.getPartitionId(key)
@@ -160,25 +172,13 @@ def put(key):
                     response = A.json()
                     message = {"result": response['result'], "value": response['value'], "partition_id": META.THIS_PARTITION,
                                "causal_payload": response['causal_payload'], "timestamp": response['timestamp']}
-                    return fn.http_success(message, status_code) # this could be error or success
+                    # this could be error or success
+                    return fn.http_success(message, status_code)
                 except requests.exceptions.Timeout:
                     continue
             return fn.http_error({"result": "Error", "msg": "Server unavailable"}, 500)
     else:
         return fn.http_error({"result": "Error", "msg": "No VALUE provided"}, 403)
-
-
-@app.route('/kv-store/get_node_details')
-def get_node():
-    r = "success"
-    m = "Yes" if IS_REPLICA else "No"
-    return (jsonify({"result": r, "replica": m}))
-
-
-@app.route('/kv-store/get_all_replicas')
-def get_all():
-    r = "success" if META.REPLICAS else "failure"
-    return (jsonify({"result": r, "replicas": META.REPLICAS}))
 
 
 @app.route('/kv-store/update_view', methods=['PUT'])
@@ -320,6 +320,8 @@ def getGossip():
     return json.dumps(to_update)
 
 # Quick check to see if it's alive
+
+
 @app.route('/hey', methods=['GET'])
 def hey():
     return (json.dumps({"result": "success"}), 200, {'Content-Type': 'application/json'})
@@ -332,6 +334,8 @@ def duplicateReplica(proxy_ipp):
                  data={"d": d, "vc": vc, "timestamp": timestamp})
 
 # omg did you hear what Becky did???
+
+
 def gossip(gossip_ipp):
     # Send all information to other node
     d, vc, timestamp = kv.getDictionaries()
@@ -382,7 +386,8 @@ def findNewest(key):
         if fn.equalityVC(current_max_VC, temp_VC):
             continue
         if (compare_VC_results is None and current_timestamp > current_max_timestamp) or compare_VC_results:
-           (current_max_value, current_max_VC , current_max_timestamp) = (temp_value, temp_VC, temp_timestamp)
+            (current_max_value, current_max_VC, current_max_timestamp) = (
+                temp_value, temp_VC, temp_timestamp)
 
     return current_max_value, current_max_VC, current_max_timestamp
 
@@ -407,6 +412,7 @@ def ping_failed(request, exception):
         except:
             print("CAN'T find")
             continue
+
 
 def runGossip():
     while True:

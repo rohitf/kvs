@@ -3,9 +3,9 @@ from imports import *
 class META:
     # __slots__ = ("VIEW", "REPLICAS_WANTED", "PROXIES", "REPLICAS", "IP_PORT", "ID", "PORT", "EXTERNAL_IP")
 
-    REPLICAS_PER_PART = None
-    PROXIES = None
-    REPLICAS = None
+    REPLICAS_PER_PART = 1
+    # PROXIES = []
+    # REPLICAS = []
     IP_PORT = None
     ID = None
     PORT = None
@@ -13,7 +13,7 @@ class META:
     THIS_PARTITION = None
     NODE_TYPE = None
 
-    GLOBAL_VIEW = {}
+    GLOBAL_VIEW = {0: []}
     DIRECTORY = {}
 
 # # KVS variables
