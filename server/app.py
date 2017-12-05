@@ -254,7 +254,6 @@ def addNode(update_ip):
                     except requests.exceptions.Timeout:
                         continue
         else:
-            # add node as proxy
 
 def removeNode(update_ip):
     # remove node from partition
