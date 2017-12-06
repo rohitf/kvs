@@ -8,7 +8,7 @@ class META:
     IP_PORT = 10.0.0.21:8080 # or localhost?
     ID = 0
     PORT = 8080
-    EXTERNAL_IP = 10.0.0.
+    EXTERNAL_IP = None
     THIS_PARTITION = 0
     NODE_TYPE = PROXY
     GLOBAL_VIEW = {0: []}

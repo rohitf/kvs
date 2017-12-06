@@ -74,6 +74,14 @@ def local_success(message="", status_code=200):
     }
     return resp
 
+def clean_proxy(proxy_ip):
+    try:
+        data = {"directory": {}, "global_view": {}}
+        url = "http://" + proxy_ip + "/kv-store/stupid_update"
+        resp = requests.put(url, timeout=5)
+        break
+    except requests.exceptions.Timeout:
+        continue
 
 def http_error(payload, status_code):
     resp = ({json.dumps(payload), status_code, {
