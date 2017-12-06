@@ -42,7 +42,7 @@ def add_replicas(partition_id, *node_ips):
 def remove_partition(node_ip):
     for partition_id in META.GLOBAL_VIEW.values():
         if node_ip in META.GLOBAL_VIEW[partition_id]:
-            add_nodes(0, META.GLOBAL_VIEW[partition_id])
+            add_nodes(0, META.GLOBAL_VIEW[partition_id]) # add all the replicas left in partition to proxies
             del META.GLOBAL_VIEW[partition_id]
             return
     return -1
@@ -287,6 +287,14 @@ def get_partition_id(node_ip):
 def partitions():
     return META.GLOBAL_VIEW
 
-def downgrade_replicas():
+def downgrade_replicas(replicas):
     # strip all replicas of data and some metadata
+    urls = ["http://" + replica_ip + "/kv-store/stupid_update" for replica_ip in replicas]
+    data = {
+        THIS_PARTITION: 0
+        NODE_TYPE: PROXY
+        GLOBAL_VIEW: META.GLOBAL_VIEW
+        DIRECTORY = META.DIRECTORY
+    }
 
+    put_broadcast(urls, data)    
