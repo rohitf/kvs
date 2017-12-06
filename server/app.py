@@ -25,12 +25,14 @@ if VIEWS_os_env is not None:
     IS_REPLICA = META.NODE_TYPE == REPLICA  # T/F if node is replica
 
 if IS_REPLICA:
-    META.THIS_PARTITION = (VIEWS.index(META.IP_PORT) +1) / META.REPLICAS_PER_PART
+    META.THIS_PARTITION = (VIEWS.index(META.IP_PORT) +
+                           1) / META.REPLICAS_PER_PART
 
 META.EXTERNAL_IP = (META.IP_PORT[:-5])
 META.PORT = (META.IP_PORT[-4:])
 
 app = Flask(__name__)
+
 
 @app.route('/kv-store/<key>')
 def get(key):
@@ -66,6 +68,7 @@ def get(key):
             return fn.http_error(message, status_code)
         elif no_result:
             return fn.http_error({"result": "error", "msg": "Key does not exist"}, 404)
+
         message = {"result": "success", "value": current_max_value, "node_id": MY_ID,
                    "causal_payload": current_max_VC, "timestamp": current_max_timestamp}
         return fn.http_error(message, status_code)
@@ -88,12 +91,14 @@ def get(key):
                 continue
         return fn.http_error({"result": "Error", "msg": "Server unavailable"}, 500)
 
+
 @app.route('/kv-store/verify/<key>')
 def stupidGet(key):
     value, causal_payload, timestamp = kv.get(key)
     message = {"value": value, "causal_payload": causal_payload,
                "timestamp": timestamp}
     return fn.http_success(message, 200)
+
 
 @app.route('/kv-store/<key>', methods=['PUT'])
 def put(key):
@@ -174,6 +179,7 @@ def put(key):
     else:
         return fn.http_error({"result": "Error", "msg": "No VALUE provided"}, 403)
 
+
 @app.route('/kv-store/stupid_update', methods=['PUT'])
 def updateMeta():
     update_attrs = request.form.to_dict()
@@ -182,9 +188,10 @@ def updateMeta():
         attr = attr.upper()
         META[attr] = request.form.get(attr)
 
+
 def rebalanceNodes():
     for partition in META.GLOBAL_VIEW:
-        if partition == 0: # ignore proxies
+        if partition == 0:  # ignore proxies
             continue
         for node_ipp in META.GLOBAL_VIEW[partition]:
             try:
@@ -193,6 +200,7 @@ def rebalanceNodes():
                 break
             except requests.exceptions.Timeout:
                 continue
+
 
 @app.route('/rebalance')
 def rebalance():
@@ -204,30 +212,39 @@ def rebalance():
             print("REBALANCE FAILED")
 
     toSend = {}
-    d, vc, ts = kv.getDictionaries()
     for key in d:
         correct_part = fn.getPartitionId(key)
         if correct_part == META.THIS_PARTITION:
             continue
         curr_val, curr_vc, curr_ts = kv.get(key)
         try:
-            toSend[correct_part].append({'key' : key, 'value' : curr_val, 'casual_payload': fn.listToString(curr_vc), 'timestamp' : curr_ts}) # raises Error the first time, disgusting!
+            toSend[correct_part].append({'key': key, 'value': curr_val, 'casual_payload': fn.listToString(
+                curr_vc), 'timestamp': curr_ts})  # raises Error the first time, disgusting!
         except KeyError:
-            toSend[correct_part] = [{'key' : key, 'value' : curr_val, 'casual_payload': fn.listToString(curr_vc), 'timestamp' : curr_ts}]
+            toSend[correct_part] = [{'key': key, 'value': curr_val, 'casual_payload': fn.listToString(
+                curr_vc), 'timestamp': curr_ts}]
         kv.delete(key)
 
     for partition_num in toSend:
         for node_ipp in META.GLOBAL_VIEW[partition_num]:
             try:
-                content = json.dumps(toSend[partition_num]) # convert content to string
-                resp = requests.put("http://" + node_ipp + "/key_dump", data={'content': content}, timeout=5)
+                # convert content to string
+                content = json.dumps(toSend[partition_num])
+                resp = requests.put(
+                    "http://" + node_ipp + "/key_dump", data={'content': content}, timeout=5)
                 break
             except requests.exceptions.Timeout:
                 continue
 
-    kv_data = {'d' : json.dumps(d), 'vc' : json.dumps(vs), 'timestamp' : json.dumps(ts)}
-    for node_ipp in fn.get_replicas(META.THIS_PARTITION):
-        requests.put("http://" + node_ipp + "/kv-store/duplicate", data= kv_data, timeout=5)
+    d, vc, ts = kv.getDictionaries()
+    kv_data = {'d': json.dumps(d), 'vc': json.dumps(
+        vs), 'timestamp': json.dumps(ts)}
+
+    # send updated kvs to other replicas in partition
+    urls = ["http://" + node_ipp +
+            "/kv-store/duplicate" for node_ipp in fn.get_replicas(META.THIS_PARTITION)]
+    fn.put_broadcast(urls, kv_data)
+
 
 @app.route('/kv-store/update_view', methods=['PUT'])
 def update():
@@ -241,13 +258,15 @@ def update():
         # put this stuff in a callback
         message = {
             "result": "success",
-            "partition_id": part_id
+            "partition_id": part_id,
             "number_of_partitions": len(META.GLOBAL_VIEW)
         }
 
         try:
-            data={'global_view': META.GLOBAL_VIEW, 'directory': META.DIRECTORY}
-            urls = ["http://" + node_ip + "/kv-store/stupid_update" for node_ip in fn.get_all_nodes()]
+            data = {'global_view': META.GLOBAL_VIEW,
+                    'directory': META.DIRECTORY}
+            urls = ["http://" + node_ip +
+                    "/kv-store/stupid_update" for node_ip in fn.get_all_nodes()]
             responses = fn.put_broadcast(data, urls)
 
             return fn.http_success(message)
@@ -256,11 +275,12 @@ def update():
 
     else:
         message = {
-            "result": "error" #TODO check if correct response
+            "result": "error"  # TODO check if correct response
         }
 
+
 def addNode(update_ip):
-    if update_ip not in fn.get_all_nodes(): # Check if not already in views
+    if update_ip not in fn.get_all_nodes():  # Check if not already in views
         # First add to GLOBAL VIEW as proxy
         fn.add_proxy(update_ip)
 
@@ -270,7 +290,7 @@ def addNode(update_ip):
             # returns id of new partition
             part_id = updateProxies()
             for partition in META.GLOBAL_VIEW:
-                if partition == 0: # ignore proxies
+                if partition == 0:  # ignore proxies
                     continue
 
                 # Tell all replicas to rebalance
@@ -281,46 +301,50 @@ def addNode(update_ip):
                         break
                     except requests.exceptions.Timeout:
                         continue
-        else: # If just proxy, no promotion, just update new proxy
+        else:  # If just proxy, no promotion, just update new proxy
             updateProxy(update_ip)
             part_id = 0
 
         return SUCCESS, part_id
 
-    else: # Node already existed in views, prob won't need this
+    else:  # Node already existed in views, prob won't need this
         return ERROR, None
+
 
 def removeNode(update_ip):
     # remove node from partition
     if fn.get_node_type(update_ip) == REPLICA:
         partition_id = fn.get_partition_id(update_ip)
-        
-        if len(META.GLOBAL_VIEW[0]) > 0: # proxies exist
-            replaceProxy = fn.proxies()[-1]
-            
-            # update our global view
-            fn.remove_node(update_ip) # remove from our global view
-            fn.add_node(partition_id, replaceProxy) # add to our global view
 
-            fn.generateDirectory(fn.count_partitions()) # update our directory
-            upgradeProxy(replaceProxy) # upgrade the last proxy to a replica with latest data
-            
+        if len(META.GLOBAL_VIEW[0]) > 0:  # proxies exist
+            replaceProxy = fn.proxies()[-1]
+
+            # update our global view
+            fn.remove_node(update_ip)  # remove from our global view
+            fn.add_node(partition_id, replaceProxy)  # add to our global view
+
+            fn.generateDirectory(fn.count_partitions())  # update our directory
+            # upgrade the last proxy to a replica with latest data
+            upgradeProxy(replaceProxy)
+
             if broadcastGlobals() == SUCCESS:
                 pass
             else:
                 raise ValueError('A very specific bad thing happened.')
         else:
             downgradeReplicas = fn.get_replicas(partition_id)
-            
+
             fn.remove_partition(update_ip)
-            fn.downgrade_replicas(downgradeReplicas) # strip ex-replicas of their data, ruthlessly
-            
+            # strip ex-replicas of their data, ruthlessly
+            fn.downgrade_replicas(downgradeReplicas)
+
             if broadcastGlobals() == SUCCESS:
                 rebalance()
             else:
                 raise ValueError('A very specific bad thing happened.')
     else:
         pass
+
 
 def upgradeProxy(update_ip, partition_id):
     # data dump to give proxy God Data from replicas
@@ -332,12 +356,15 @@ def upgradeProxy(update_ip, partition_id):
             "this_partition": fn.last_partition_id(),
             "replicas_per_part": META.REPLICAS_PER_PART
         }
-        
-        request.put("http://" + update_ip + "/kv-store/stupid_update", data=data)
+
+        request.put("http://" + update_ip +
+                    "/kv-store/stupid_update", data=data)
     except:
         print("FAILED UPDATE PROXY (remove)")
 
 # Only ever called from add_Node()
+
+
 def updateProxies():
     proxies = fn.proxies()[:]
     fn.add_partition(proxies)
@@ -354,17 +381,21 @@ def updateProxies():
             "this_partition": fn.last_partition_id(),
             "replicas_per_part": META.REPLICAS_PER_PART
         }
-        urls = ["http://" + node_ip + "/kv-store/stupid_update" for node_ip in proxies]
+        urls = ["http://" + node_ip +
+                "/kv-store/stupid_update" for node_ip in proxies]
         responses = fn.put_broadcast(data, urls)
     except:
         print("FAILED UPDATE PROXIES")
+
 
 @app.route('/key_dump', methods=['PUT'])
 def key_dump():
     update_content = json.loads(request.form.get('content'))
     for key_info in update_content:
-        resp = kv.put(key_info['key'], key_info['value'], fn.stringToList(key_info['causal_payload']), int(key_info['timestamp']))
+        resp = kv.put(key_info['key'], key_info['value'], fn.stringToList(
+            key_info['causal_payload']), int(key_info['timestamp']))
     return resp
+
 
 @app.route('/kv-store/duplicate', methods=['PUT'])
 def duplicate():
@@ -372,6 +403,7 @@ def duplicate():
     vc = json.loads(request.form.get('vc'))
     timestamp = json.loads(request.form.get('timestamp'))
     kv.setDictionaries(d, vc, timestamp)
+
 
 @app.route('/kv-store/gossip', methods=['POST'])
 def getGossip():
@@ -402,7 +434,8 @@ def getGossip():
         compare_VC_results = fn.compareVC(my_vc_val, sent_vc_val)
         if (compare_VC_results is None and my_ts_val > sent_ts_val) or compare_VC_results:
             # mine is bigger, save it
-            to_update[key] = {"value": my_d_val, "causal_payload": my_vc_val, "timestamp": my_ts_val}
+            to_update[key] = {"value": my_d_val,
+                              "causal_payload": my_vc_val, "timestamp": my_ts_val}
         else:
             # theirs is bigger, update mine
             result, status_code = kv.put(
@@ -415,15 +448,39 @@ def getGossip():
 def hey():
     return (json.dumps({"result": "success"}), 200, {'Content-Type': 'application/json'})
 
+@app.route('/kv-store/get_partition_id')
+def get_partition_id():
+    m = META.THIS_PARTITION
+    return fn.http_success({"result": "success", "partition_id": str(m)}, 200)
+
+@app.route('/kv-store/get_all_partition_ids')
+def get_all_partition_ids():
+    LV = range(1, fn.count_partitions() + 1)
+    return fn.http_success({"result": "success", "partition_id_list": ','.join(LV)}, 200)
+
+@app.route('/kv-store/get_partition_members')
+def get_partition_members():
+	LV = []
+	partition_id = request.form.get('partition_id')
+    if 1 <= partition_id <= fn.count_partitions:
+		LV = fn.get_replicas(partition_id)
+		return fn.http_success({"result": "success", "partition_members": ', '.join(LV)}, 200)
+	else:
+		return fn.http_error({"result": "error", "partition_members": "failed"}, 404)
+
+# HELPERS - MOVE TO FUNCTIONS #
+
 def broadcastGlobals():
     try:
-            data={'global_view': META.GLOBAL_VIEW, 'directory': META.DIRECTORY}
-            urls = ["http://" + node_ip + "/kv-store/stupid_update" for node_ip in fn.get_all_nodes()]
-            responses = fn.put_broadcast(data, urls)
+        data = {'global_view': META.GLOBAL_VIEW, 'directory': META.DIRECTORY}
+        urls = ["http://" + node_ip +
+                "/kv-store/stupid_update" for node_ip in fn.get_all_nodes()]
+        responses = fn.put_broadcast(data, urls)
 
-            return fn.http_success("SUCCESS")
+        return fn.http_success("SUCCESS")
     except:
         print("FAILED STUPID UPDATE")
+
 
 def duplicateReplica(proxy_ipp):
     d, vc, timestamp = kv.getDictionaries()
@@ -453,6 +510,7 @@ def gossip(gossip_ipp):
         return SUCCESS
     except:
         return ERROR
+
 
 def findNewest(key):
     replica_req = []
@@ -489,12 +547,14 @@ def findNewest(key):
 
     return current_max_value, current_max_VC, current_max_timestamp
 
+
 def ping():
     while True:
         reqs = [grequests.get("http://" + node_address + "/hey", timeout=5)
                 for node_address in META.REPLICAS]
         grequests.map(reqs, exception_handler=ping_failed)
         time.sleep(2)
+
 
 def ping_failed(request, exception):
     url = request.url.split("//")[1].split("/")[0]
@@ -509,11 +569,13 @@ def ping_failed(request, exception):
             print("CAN'T find")
             continue
 
+
 def runGossip():
     while True:
-        for r in META.REPLICAS:
+        for r in fn.get_replicas(META.THIS_PARTITION):
             status = gossip(r)
     sleep(10)
+
 
 background_thread = Thread(target=ping, args=())
 background_thread.start()
@@ -524,3 +586,4 @@ background_thread.start()
 if __name__ == '__main__':
     # Run Command
     app.run(host=META.EXTERNAL_IP, port=int(META.PORT), debug=True)
+
