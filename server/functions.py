@@ -221,6 +221,7 @@ def generateGlobalView(all_views):
         if i % split == 0:  # partition is full, so create new one
             add_partition()
         GV[len(GV)].append(all_views[i])
+        # all_views will append ip as string to gv
 
     # check if last partition needs to become proxies
     last_partition_index = len(GV)

@@ -3,19 +3,16 @@ from imports import *
 class META:
     # __slots__ = ("VIEW", "REPLICAS_WANTED", "PROXIES", "REPLICAS", "IP_PORT", "ID", "PORT", "EXTERNAL_IP")
 
+    # Set defaults
     REPLICAS_PER_PART = 1
-    # PROXIES = []
-    # REPLICAS = []
-    IP_PORT = None
-    ID = None
-    PORT = None
-    EXTERNAL_IP = None
-    THIS_PARTITION = None
-    NODE_TYPE = None
+    IP_PORT = 10.0.0.21:8080 # or localhost?
+    ID = 0
+    PORT = 8080
+    EXTERNAL_IP = 10.0.0.
+    THIS_PARTITION = 0
+    NODE_TYPE = PROXY
     GLOBAL_VIEW = {0: []}
     DIRECTORY = {}
-
-    # TODO: set smart defaults above
 
 # # KVS variables
 # KVS = {
