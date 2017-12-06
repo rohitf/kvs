@@ -335,8 +335,8 @@ def is_balanced_on_avg(counts, threshold=0.9):
 
 
 if __name__ == "__main__":
-    container_name = 'asgn4'
-    hostname = '192.168.99.100'
+    container_name = 'hw4'
+    hostname = 'localhost'
     network = 'mynet'
     sudo = 'sudo'
 
