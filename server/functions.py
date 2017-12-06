@@ -81,7 +81,7 @@ def remove_node_error(message="", status_code=403):
 def local_success(message="", status_code=200):
     resp = {
         "result": "SUCCESS",
-        "msg": message,
+        "message": message,
         "status_code": status_code
     }
     return resp
@@ -291,10 +291,10 @@ def downgrade_replicas(replicas):
     # strip all replicas of data and some metadata
     urls = ["http://" + replica_ip + "/kv-store/stupid_update" for replica_ip in replicas]
     data = {
-        THIS_PARTITION: 0
-        NODE_TYPE: PROXY
-        GLOBAL_VIEW: META.GLOBAL_VIEW
-        DIRECTORY = META.DIRECTORY
+        THIS_PARTITION: 0,
+        NODE_TYPE: PROXY,
+        GLOBAL_VIEW: META.GLOBAL_VIEW,
+        DIRECTORY: META.DIRECTORY
     }
 
     put_broadcast(urls, data)    

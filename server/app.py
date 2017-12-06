@@ -252,7 +252,14 @@ def update():
     update_ip = request.form.get('ip_port')
 
     # update our global view
-    r, part_id = addNode(update_ip) if type == "add" else removeNode(update_ip)
+    if type == "add":
+        resp = addNode(update_ip)
+        r = resp["result"]
+        part_id = resp["message"]
+    else:
+        resp = addNode(update_ip)
+        r = resp["result"]
+        part_id = resp["message"]
 
     if r == SUCCESS:
         # put this stuff in a callback
@@ -305,7 +312,7 @@ def addNode(update_ip):
             updateProxy(update_ip)
             part_id = 0
 
-        return SUCCESS, part_id
+        return fn.local_success(part_id)
 
     else:  # Node already existed in views, prob won't need this
         return ERROR, None
@@ -313,9 +320,10 @@ def addNode(update_ip):
 
 def removeNode(update_ip):
     # remove node from partition
+    partition_id = fn.get_partition_id(update_ip)
+    
     if fn.get_node_type(update_ip) == REPLICA:
-        partition_id = fn.get_partition_id(update_ip)
-
+    
         if len(META.GLOBAL_VIEW[0]) > 0:  # proxies exist
             replaceProxy = fn.proxies()[-1]
 
@@ -342,8 +350,10 @@ def removeNode(update_ip):
                 rebalance()
             else:
                 raise ValueError('A very specific bad thing happened.')
-    else:
-        pass
+    else: # if proxy, stupid remove
+        fn.remove_node(update_ip)  # remove from our global view
+
+    return fn.local_success(partition_id)
 
 
 def upgradeProxy(update_ip, partition_id):
