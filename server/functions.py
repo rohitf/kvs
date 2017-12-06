@@ -183,6 +183,8 @@ def listToString(lst):
 def stringToList(stg):
     return (stg[1:-1]).split(",")
 
+def getThisPartition():
+    return META.GLOBAL_VIEW[META.THIS_PARTITION]
 
 hashMax = 10000
 hasher = hashlib.sha1()

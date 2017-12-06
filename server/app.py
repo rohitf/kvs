@@ -402,6 +402,15 @@ def getGossip():
 def hey():
     return (json.dumps({"result": "success"}), 200, {'Content-Type': 'application/json'})
 
+def broadcastGlobals():
+    try:
+            data={'global_view': META.GLOBAL_VIEW, 'directory': META.DIRECTORY}
+            urls = ["http://" + node_ip + "/kv-store/stupid_update" for node_ip in fn.get_all_nodes()]
+            responses = fn.put_broadcast(data, urls)
+
+            return fn.http_success(message)
+    except:
+        print("FAILED STUPID UPDATE")
 
 def duplicateReplica(proxy_ipp):
     d, vc, timestamp = kv.getDictionaries()
