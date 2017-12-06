@@ -42,7 +42,7 @@ def generate_response(payload, status_code):
     return resp
 
 
-def local_error(message="", status_code=403):
+def remove_node_error(message="", status_code=403):
     resp = {
         "result": "ERROR",
         "msg": message,

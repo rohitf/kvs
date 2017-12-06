@@ -9,7 +9,7 @@ def get(self, key):
     try:
         return store[key]
     except KeyError:
-        return fn.local_error("Key not found", 403)
+        return fn.remove_node_error("Key not found", 403)
 
 
 def put(key, value="", causal_payload=[0, 0, 0, 0]):

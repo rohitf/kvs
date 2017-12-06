@@ -216,7 +216,14 @@ def update():
     update_ip = request.form.get('ip_port')
 
     # update our global view
-    r, part_id = addNode(update_ip) if type == "add" else removeNode(update_ip)
+    if type="add":
+        resp = addNode(update_ip)
+        r = resp["result"]
+        part_id = resp["message"]
+    else:
+        resp = removeNode(update_ip)
+        r = resp["result"]
+        part_id = resp["message"]
 
     if r == SUCCESS:
         # put this stuff in a callback
@@ -249,7 +256,7 @@ def addNode(update_ip):
         if len(fn.proxies() >= META.REPLICAS_PER_PART):
 
             # returns id of new partition
-            part_id = updateProxies()
+            part_id = upgradeProxies()
             for partition in META.GLOBAL_VIEW:
                 if partition == 0: # ignore proxies
                     continue
@@ -263,37 +270,63 @@ def addNode(update_ip):
                     except requests.exceptions.Timeout:
                         continue
         else: # If just proxy, no promotion, just update new proxy
-            updateProxy(update_ip)
+            fn.updateProxy(update_ip)
             part_id = 0
 
-        return SUCCESS, part_id
+        return fn.local_success(part_id)
 
     else: # Node already existed in views, prob won't need this
         return ERROR, None
 
 def removeNode(update_ip):
     # remove node from partition
-    # if there is a proxy to upgrade,
-    # - Data Dump it
-    # - Give it kv/vc/timestamps
-    # - Update everyones global view/ directory
-    # if there is not a proxy to upgrade
-    # - rebalence
-    # - demote everything in partition to proxy
+    if fn.get_node_type(update_ip) == REPLICA:
+        partition_id = fn.get_partition_id(update_ip)
+        
+        if len(META.GLOBAL_VIEW[0]) > 0: # proxies exist
+            replaceProxy = fn.proxies()[-1]
+            
+            # update our global view
+            fn.remove_node(update_ip) # remove from our global view
+            fn.add_node(partition_id, replaceProxy) # add to our global view
 
-    if fn.is_replica(update_ip):
-        # remove node from its partition
-        updateProxies([update_ip])
+            fn.generateDirectory(fn.count_partitions()) # update our directory
+            upgradeProxy(replaceProxy) # upgrade the last proxy to a replica with latest data
+            
+            broadcastGlobals()
+        else:
+            downgradeReplicas = fn.get_replicas(partition_id)
+            
+            fn.remove_partition(update_ip)
+            fn.downgrade_replicas(downgradeReplicas) # strip ex-replicas of their data, ruthlessly
+            broadcastGlobals()
+
+            rebalance()
     else:
-        fn.remove_proxy(update_ip)
+        pass
+
+def upgradeProxy(update_ip, partition_id):
+    # data dump to give proxy God Data from replicas
+    try:
+        data = {
+            "global_view": fn.dictionaryToString(META.GLOBAL_VIEW),
+            "directory": fn.dictionaryToString(META.DIRECTORY),
+            "node_type": REPLICA,
+            "this_partition": fn.last_partition_id(),
+            "replicas_per_part": META.REPLICAS_PER_PART
+        }
+        
+        request.put("http://" + update_ip + "/kv-store/duplicate_meta", data=data)
+    except:
+        print("FAILED UPDATE PROXY (remove)")
 
 # Only ever called from add_Node()
-def updateProxies():
+def upgradeProxies():
     proxies = fn.proxies()[:]
     fn.add_partition(proxies)
     fn.clear_proxies()
 
-    fn.generateDirectory(fn.count_partitions())
+    fn.generateDirectory(fn.count_partitions()) # Why is this here?
 
     # data dump to give all proxies God Data from replicas
     try:
@@ -438,6 +471,18 @@ def findNewest(key):
 
     return current_max_value, current_max_VC, current_max_timestamp
 
+def rebalanceNodes():
+    for partition in fn.partitions():
+        if partition == 0: # ignore proxies
+            continue
+        for node_ipp in META.GLOBAL_VIEW[partition]:
+            try:
+                url = "http://" + node_ipp + "/rebalance"
+                resp = requests.put(url, timeout=5)
+                break
+            except requests.exceptions.Timeout:
+                continue
+
 def ping():
     while True:
         reqs = [grequests.get("http://" + node_address + "/hey", timeout=5)
@@ -477,6 +522,8 @@ def duplicate_meta():
     META.NODE_TYPE = request.form.get('node_type')
     META.THIS_PARTITION = int(request.form.get('this_partition'))
     META.REPLICAS_PER_PART = int(request.form.get('replicas_per_part'))
+
+    # return fn.http_success({"result": SUCCESS})
 
 if __name__ == '__main__':
     # Run Command

@@ -11,6 +11,9 @@ from globals import *
 # General functions
 # Returns the URL of a random replica
 
+def proxies():
+    return META.GLOBAL_VIEW[0]
+
 def count_nodes():
     return len(get_all_replicas() + proxies())
 
@@ -20,47 +23,56 @@ def get_node_type():
 def get_id(ip_port):
     return ip_port[8:-5]
 
-def get_all_nodes():
-    return get_all_replicas().extend(proxies())
-
 def get_all_replicas():
     all_replicas = []
     for partition in META.GLOBAL_VIEW:
         all_replicas.extend(partition)
 
-    return all_replicas
+def get_all_nodes():
+    return get_all_replicas().extend(proxies())
 
 def get_replicas(partition_id):
     return META.GLOBAL_VIEW[partition_id]
 
-def proxies():
-    return META.GLOBAL_VIEW[0]
+
 
 def add_replicas(partition_id, *node_ips):
     META.GLOBAL_VIEW[partition_id].extend(node_ips)
 
-def add_proxy(node_ip):
-    META.GLOBAL_VIEW[0].append(node_ip)
+def remove_partition(node_ip):
+    for partition_id in META.GLOBAL_VIEW.values():
+        if node_ip in META.GLOBAL_VIEW[partition_id]:
+            add_nodes(0, META.GLOBAL_VIEW[partition_id])
+            del META.GLOBAL_VIEW[partition_id]
+            return
+    return -1
 
-def remove_proxy(node_ip):
-    META.GLOBAL_VIEW[0].remove(node_ip)
+def remove_node(node_ip):
+    for partition_id in META.GLOBAL_VIEW.values():
+        if node_ip in META.GLOBAL_VIEW[partition_id]:
+            META.GLOBAL_VIEW[partition_id].remove(node_ip)    
 
+            return local_success("SUCCESS")
+    return -1
+
+
+    
 def clear_proxies():
     META.GLOBAL_VIEW[0] = []
 
 def node_type(node_ip):
     return REPLICA if node_ip in get_all_replicas() else PROXY
 
-def http_success(payload, status_code):
+def http_success(payload, status_code=200):
     resp = ({json.dumps(payload), status_code, {
             'Content-Type': 'application/json'}})
     return resp
 
 
-def local_error(message="", status_code=403):
+def remove_node_error(message="", status_code=403):
     resp = {
         "result": "ERROR",
-        "msg": message,
+        "message": message,
         "status_code": status_code
     }
     return resp
@@ -74,14 +86,14 @@ def local_success(message="", status_code=200):
     }
     return resp
 
-def clean_proxy(proxy_ip):
+def clean_node(node_ip):
     try:
         data = {"directory": {}, "global_view": {}}
-        url = "http://" + proxy_ip + "/kv-store/stupid_update"
+        url = "http://" + node_ip + "/kv-store/stupid_update"
         resp = requests.put(url, timeout=5)
-        break
+        return resp
     except requests.exceptions.Timeout:
-        continue
+        return remove_node_error("Clean Node failed!")
 
 def http_error(payload, status_code):
     resp = ({json.dumps(payload), status_code, {
@@ -218,6 +230,10 @@ def generateDirectory(num_of_partitions):
         m += individual_size
     META.DIRECTORY[num_of_partitions] = [m, (m+individual_size-1 + extra)]
 
+def add_partition(nodes=[]):
+    new_partition_index = len(META.GLOBAL_VIEW) + 1
+    META.GLOBAL_VIEW[new_partition_index] = nodes[:] # pass a shallow copy of the nodes to avoid unwanted references
+
 def generateGlobalView(all_views):
     if all_views is None:
         return
@@ -238,10 +254,6 @@ def generateGlobalView(all_views):
         del GV[last_partition_index]
         GV[0] = temp
 
-def add_partition(nodes=[]):
-    new_partition_index = len(META.GLOBAL_VIEW) + 1
-    META.GLOBAL_VIEW[new_partition_index] = nodes[:] # pass a shallow copy of the nodes to avoid unwanted references
-
 def count_partitions():
     return len(META.GLOBAL_VIEW) - 1
 
@@ -259,3 +271,22 @@ def dictionaryToString(dictionary):
 
 def stringToDictionary(strng):
     return json.loads(strng)
+
+def add_node(partition_id, update_ip):
+    return META.GLOBAL_VIEW[partition_id].append(update_ip)
+
+def add_nodes(partition_id, update_ips):
+    return META.GLOBAL_VIEW[partition_id].extend(update_ips)
+
+def get_partition_id(node_ip):
+    for partition_id in META.GLOBAL_VIEW.values():
+        if node_ip in META.GLOBAL_VIEW[partition_id]:
+            return partition_id
+    return -1
+
+def partitions():
+    return META.GLOBAL_VIEW
+
+def downgrade_replicas():
+    # strip all replicas of data and some metadata
+
